@@ -1,0 +1,14 @@
+# data files (too large for git, keep locally only)
+data/*.csv
+data/*.parquet
+data/*.zip
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.venv/
+
+# os
+.DS_Store
