@@ -6,8 +6,9 @@ OUT_PATH = "data/flight_prices_clean.parquet"
 
 con = duckdb.connect()
 
-# 先看一下清洗前的行数、以及要清洗掉的问题各自有多少行，方便你理解每一步在删什么
-print("=== 清洗前统计 ===")
+# Check row counts for each cleaning rule before touching the data,
+# so we can see how much each rule would affect before applying it
+print("=== Stats before cleaning ===")
 stats = con.execute(f"""
     SELECT
         COUNT(*) AS total_rows,
@@ -19,13 +20,13 @@ stats = con.execute(f"""
 """).fetchone()
 
 total, bad_fare, bad_date, bad_seats, missing_distance = stats
-print(f"总行数: {total:,}")
-print(f"票价异常(<=$20 或 >=$5000 或空值): {bad_fare:,} 行")
-print(f"日期逻辑错误(flightDate < searchDate): {bad_date:,} 行")
-print(f"座位数为负数: {bad_seats:,} 行")
-print(f"totalTravelDistance 缺失: {missing_distance:,} 行 (不删除,后面填补)")
+print(f"Total rows: {total:,}")
+print(f"Bad fares (<=$20 or >=$5000 or null): {bad_fare:,} rows")
+print(f"Bad dates (flightDate < searchDate): {bad_date:,} rows")
+print(f"Negative seatsRemaining: {bad_seats:,} rows")
+print(f"Missing totalTravelDistance: {missing_distance:,} rows (not dropped, imputed below)")
 
-print("\n=== 开始清洗 + 特征工程 ===")
+print("\n=== Cleaning + feature engineering ===")
 start = time.time()
 
 con.execute(f"""
@@ -55,12 +56,12 @@ con.execute(f"""
 """)
 
 elapsed = time.time() - start
-print(f"清洗完成，耗时 {elapsed:.1f} 秒")
+print(f"Cleaning done in {elapsed:.1f}s")
 
-# 清洗后统计
+# Stats after cleaning
 after = con.execute(f"SELECT COUNT(*) FROM '{OUT_PATH}'").fetchone()[0]
-print(f"\n清洗后行数: {after:,} (原始 {total:,}，删除了 {total - after:,} 行，占比 {(total-after)/total*100:.2f}%)")
+print(f"\nRows after cleaning: {after:,} (from {total:,}, dropped {total - after:,} rows, {(total-after)/total*100:.2f}%)")
 
 import os
 size_mb = os.path.getsize(OUT_PATH) / (1024 * 1024)
-print(f"输出文件大小: {size_mb:.1f} MB (原始 csv 是 {os.path.getsize(IN_PATH) / (1024**3):.1f} GB)")
+print(f"Output file size: {size_mb:.1f} MB (original csv was {os.path.getsize(IN_PATH) / (1024**3):.1f} GB)")
