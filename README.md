@@ -1,8 +1,7 @@
 # Flight Price Prediction
 
 Predict flight ticket prices from historical search data and tell travelers when
-to buy — not just what a fare might be, but whether to buy now or wait, and how
-much waiting could save.
+to buy — not just what a fare might be, but whether to buy now or wait, and what's the optimal purchase timing.
 
 ## Goal
 
