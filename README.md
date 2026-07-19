@@ -25,10 +25,15 @@ see `.gitignore`). To reproduce:
    `isBasicEconomy`.
 3. Place the result at `data/flight_prices_slim.csv`.
 
+The full cleaned dataset (`flight_prices_clean.parquet`, ~82M rows) is published on
+Kaggle: [Flight Price Prediction - Cleaned Dataset](https://www.kaggle.com/datasets/vickyiewang/flight-price-prediction-cleaned)
+(private — request access if you need it). A small 2,000-row sample is checked
+into this repo at `data/sample_flight_prices_clean.csv` for a quick preview.
+
 ## Project structure
 
 ```
-data/         raw and cleaned data (gitignored, not tracked)
+data/         raw and cleaned data (gitignored, not tracked, except the small sample)
 notebooks/    exploratory analysis
 src/          data pipeline and modeling scripts
 ```
