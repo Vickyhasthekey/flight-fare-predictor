@@ -3,6 +3,9 @@ data/*.csv
 data/*.parquet
 data/*.zip
 
+# small showcase sample is the exception, keep it tracked
+!data/sample_flight_prices_clean.csv
+
 # python
 __pycache__/
 *.pyc
