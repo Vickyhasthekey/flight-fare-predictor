@@ -7,9 +7,13 @@ OUT_PATH = "data/training_table.parquet"
 con = duckdb.connect()
 
 # Collapse the 82M cleaned rows down to one row per (route, flightDate,
-# days_before_departure), keeping the cheapest fare found that day. This is
-# the number a "when's it cheapest" tool actually cares about, and it also
-# shrinks the training set from tens of millions of rows to a manageable size.
+# days_before_departure, isNonStop, isBasicEconomy), keeping the cheapest fare
+# found in each group. isNonStop/isBasicEconomy stay as group keys (not
+# aggregated away) so the model - and later the site - can tell "cheapest
+# nonstop" apart from "cheapest overall". totalTravelDistance is folded in as
+# a feature via its median, since it can still vary a little within a group
+# (different connecting routings). This shrinks the row count from tens of
+# millions to a manageable size for training.
 con.execute(f"""
     COPY (
         SELECT
@@ -20,11 +24,15 @@ con.execute(f"""
             departure_day_of_week,
             departure_month,
             search_day_of_week,
+            isNonStop,
+            isBasicEconomy,
+            MEDIAN(totalTravelDistance) AS totalTravelDistance,
             MIN(totalFare) AS best_fare
         FROM '{IN_PATH}'
         GROUP BY
             startingAirport, destinationAirport, flightDate, days_before_departure,
-            departure_day_of_week, departure_month, search_day_of_week
+            departure_day_of_week, departure_month, search_day_of_week,
+            isNonStop, isBasicEconomy
     ) TO '{OUT_PATH}' (FORMAT PARQUET)
 """)
 
