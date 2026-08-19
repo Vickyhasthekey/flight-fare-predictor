@@ -7,7 +7,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 DATA_PATH = "data/training_table.parquet"
 FEATURE_COLS = [
     "days_before_departure", "departure_day_of_week", "departure_month", "search_day_of_week",
-    "isNonStop", "isBasicEconomy", "totalTravelDistance",
+    "totalTravelDistance",
 ]
 
 con = duckdb.connect()
@@ -56,20 +56,7 @@ def report_fit(name, predict_fn):
     return val_mae
 
 
-print("=== Step 0: ablation - do isNonStop/isBasicEconomy/totalTravelDistance actually help? ===")
-print("(same target, same train/val split - only the feature list differs)")
-OLD_FEATURE_COLS = ["days_before_departure", "departure_day_of_week", "departure_month", "search_day_of_week"]
-hgb_old_features = ["route_cat"] + OLD_FEATURE_COLS
-hgb_ablation_old = HistGradientBoostingRegressor(categorical_features="from_dtype", max_iter=300, random_state=42)
-hgb_ablation_old.fit(train_df[hgb_old_features], train_df["best_fare"])
-report_fit("HGB, old features only", lambda d: hgb_ablation_old.predict(d[hgb_old_features]))
-
-hgb_new_features = ["route_cat"] + FEATURE_COLS
-hgb_ablation_new = HistGradientBoostingRegressor(categorical_features="from_dtype", max_iter=300, random_state=42)
-hgb_ablation_new.fit(train_df[hgb_new_features], train_df["best_fare"])
-report_fit("HGB, old + 3 new features", lambda d: hgb_ablation_new.predict(d[hgb_new_features]))
-
-print("\n=== Step 1: overfitting check on the models we already have ===")
+print("=== Step 1: overfitting check on the models we already have ===")
 
 baseline_lookup = (
     train_df.groupby(["route", "days_before_departure"])["best_fare"]
@@ -96,8 +83,9 @@ rf_default = RandomForestRegressor(n_estimators=100, max_depth=14, n_jobs=2, ran
 rf_default.fit(train_df[rf_features], train_df["best_fare"])
 report_fit("Random Forest (original config)", lambda d: rf_default.predict(d[rf_features]))
 
-hgb_features = hgb_new_features  # reuse the model already fit in the step 0 ablation
-hgb_default = hgb_ablation_new
+hgb_features = ["route_cat"] + FEATURE_COLS
+hgb_default = HistGradientBoostingRegressor(categorical_features="from_dtype", max_iter=300, random_state=42)
+hgb_default.fit(train_df[hgb_features], train_df["best_fare"])
 report_fit("HistGradientBoosting (original config)", lambda d: hgb_default.predict(d[hgb_features]))
 
 print("\n=== Step 2: try more regularized HistGradientBoosting configs on val ===")
