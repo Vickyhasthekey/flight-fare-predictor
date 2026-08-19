@@ -113,3 +113,20 @@ print(f"\nBest config on validation: {best_name} (val MAE=${best_val_mae:.2f})")
 print("\n=== Step 3: final, one-time evaluation on the untouched test set ===")
 test_mae, test_rmse = mae_rmse(test_df["best_fare"], best_model.predict(test_df[hgb_features]))
 print(f"Final HistGradientBoosting ({best_name}) on TEST: MAE=${test_mae:.2f}  RMSE=${test_rmse:.2f}")
+
+print("\n=== Step 4: refit best config on train+val, save for reuse ===")
+# The test MAE above reflects a model that only ever saw train_df. Now that
+# hyperparameters are chosen, refit on train+val (more data, val no longer
+# needs to be held back) to get the model we'll actually use for predictions.
+best_params = {p: v for p, v in best_model.get_params().items() if v is not None}
+final_model = HistGradientBoostingRegressor(**best_params)
+train_plus_val = pd.concat([train_df, val_df])
+final_model.fit(train_plus_val[hgb_features], train_plus_val["best_fare"])
+
+import joblib
+import os
+
+os.makedirs("models", exist_ok=True)
+joblib.dump({"model": final_model, "route_categories": all_routes, "feature_cols": hgb_features},
+            "models/price_model.joblib")
+print("Saved models/price_model.joblib")
