@@ -1,28 +1,20 @@
-import duckdb
 import joblib
 import pandas as pd
 from datetime import date, timedelta
 
 MODEL_PATH = "models/price_model.joblib"
-TABLE_PATH = "data/training_table.parquet"
 MAX_DAYS = 60  # the data (and therefore the model) only covers up to 60 days before departure
 MIN_MEANINGFUL_SAVINGS = 10.0  # below this, "wait N days" isn't a convincing recommendation
 
+# Everything needed at inference time - model, route categories, and the
+# route-distance lookup - lives in this one file, so this module never needs
+# data/training_table.parquet (too big to commit, won't exist when deployed).
 bundle = joblib.load(MODEL_PATH)
 model = bundle["model"]
 route_categories = bundle["route_categories"]
 feature_cols = bundle["feature_cols"]
-
-_con = duckdb.connect()
-_route_distance = (
-    _con.execute(f"""
-        SELECT startingAirport || '-' || destinationAirport AS route, MEDIAN(totalTravelDistance) AS dist
-        FROM '{TABLE_PATH}' GROUP BY route
-    """)
-    .fetchdf()
-    .set_index("route")["dist"]
-)
-_global_median_distance = _route_distance.median()
+_route_distance = bundle["route_distance"]
+_global_median_distance = bundle["global_median_distance"]
 
 
 def _dow(d):
@@ -62,6 +54,7 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None):
         }
 
     curve = predict_curve(origin, destination, flight_date)
+    curve_records = curve[["days_before_departure", "predicted_fare"]].round(2).to_dict("records")
     current_price = float(curve.loc[curve["days_before_departure"] == days_left, "predicted_fare"].iloc[0])
 
     # only look at the window that's actually still ahead of us (today through departure) -
@@ -75,6 +68,8 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None):
         return {
             "status": "buy_now",
             "current_price": round(current_price, 2),
+            "days_left": days_left,
+            "curve": curve_records,
             "message": f"Buy now - predicted price ${current_price:.2f}. "
                        f"Price is expected to stay about the same or rise before departure.",
         }
@@ -86,6 +81,8 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None):
         "current_price": round(current_price, 2),
         "expected_best_price": round(best_price, 2),
         "expected_savings": round(savings, 2),
+        "days_left": days_left,
+        "curve": curve_records,
         "message": f"Wait about {wait_days} more day(s). Price is predicted to drop from "
                    f"${current_price:.2f} to ${best_price:.2f} (~${savings:.2f} savings).",
     }

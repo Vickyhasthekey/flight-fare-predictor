@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Price Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">
+      <span class="brand-icon">&#9992;&#65039;</span>
+      <span class="brand-name">Flight Price Predictor</span>
+    </div>
+    <h1>Know when to buy, not just what it costs.</h1>
+    <p class="subtitle">Tell us your route and travel date - we'll predict the price curve and tell you whether to buy now or wait.</p>
+  </div>
+</header>
+
+<main>
+  <section class="search-card">
+    <form id="search-form">
+      <div class="field">
+        <label for="origin">From</label>
+        <input type="text" id="origin" name="origin" placeholder="ATL" maxlength="3" required>
+      </div>
+      <div class="field">
+        <label for="destination">To</label>
+        <input type="text" id="destination" name="destination" placeholder="LAX" maxlength="3" required>
+      </div>
+      <div class="field">
+        <label for="flightDate">Flight date</label>
+        <input type="date" id="flightDate" name="flightDate" required>
+      </div>
+      <button type="submit" id="submit-btn">Predict</button>
+    </form>
+  </section>
+
+  <section id="result" class="result-card hidden">
+    <div id="result-badge" class="badge"></div>
+    <p id="result-message" class="result-message"></p>
+    <div id="result-detail" class="result-detail"></div>
+    <canvas id="price-chart" width="600" height="260"></canvas>
+  </section>
+
+  <section id="error" class="error-card hidden">
+    <p id="error-message"></p>
+  </section>
+</main>
+
+<footer>
+  <p>Built on historical Expedia search data &middot; predictions are estimates, not guarantees</p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

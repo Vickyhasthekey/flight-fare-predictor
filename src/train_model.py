@@ -126,7 +126,19 @@ final_model.fit(train_plus_val[hgb_features], train_plus_val["best_fare"])
 import joblib
 import os
 
+# Bundle the route-distance lookup into the model artifact too, so anything
+# that loads this file (like the website's API) is fully self-contained and
+# never needs data/training_table.parquet at runtime - that file is too big
+# to commit to git and won't exist in the deployed environment.
+route_distance = df.groupby("route")["totalTravelDistance"].median()
+global_median_distance = df["totalTravelDistance"].median()
+
 os.makedirs("models", exist_ok=True)
-joblib.dump({"model": final_model, "route_categories": all_routes, "feature_cols": hgb_features},
-            "models/price_model.joblib")
+joblib.dump({
+    "model": final_model,
+    "route_categories": all_routes,
+    "feature_cols": hgb_features,
+    "route_distance": route_distance,
+    "global_median_distance": global_median_distance,
+}, "models/price_model.joblib")
 print("Saved models/price_model.joblib")
