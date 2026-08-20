@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 MODEL_PATH = "models/price_model.joblib"
 MAX_DAYS = 60  # the data (and therefore the model) only covers up to 60 days before departure
-MIN_MEANINGFUL_SAVINGS = 10.0  # below this, "wait N days" isn't a convincing recommendation
+MIN_MEANINGFUL_SAVINGS = 8.0  # below this, "wait N days" isn't a convincing recommendation
 
 # Everything needed at inference time - model, route categories, and the
 # route-distance lookup - lives in this one file, so this module never needs

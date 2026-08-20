@@ -1,3 +1,99 @@
+// Airports the model was actually trained on - these are the only valid choices
+const AIRPORTS = [
+  { code: "ATL", city: "Atlanta" },
+  { code: "BOS", city: "Boston" },
+  { code: "CLT", city: "Charlotte" },
+  { code: "DEN", city: "Denver" },
+  { code: "DFW", city: "Dallas/Fort Worth" },
+  { code: "DTW", city: "Detroit" },
+  { code: "EWR", city: "Newark" },
+  { code: "IAD", city: "Washington, D.C. (Dulles)" },
+  { code: "JFK", city: "New York (JFK)" },
+  { code: "LAX", city: "Los Angeles" },
+  { code: "LGA", city: "New York (LaGuardia)" },
+  { code: "MIA", city: "Miami" },
+  { code: "OAK", city: "Oakland" },
+  { code: "ORD", city: "Chicago (O'Hare)" },
+  { code: "PHL", city: "Philadelphia" },
+  { code: "SFO", city: "San Francisco" },
+];
+
+function setupCombobox(fieldId) {
+  const field = document.getElementById(`${fieldId}-field`);
+  const input = document.getElementById(fieldId);
+  const hidden = document.getElementById(`${fieldId}-code`);
+  const list = document.getElementById(`${fieldId}-list`);
+  let activeIndex = -1;
+
+  function render(query) {
+    const q = query.trim().toLowerCase();
+    const matches = AIRPORTS.filter(
+      (a) => a.city.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)
+    );
+    list.innerHTML = "";
+    activeIndex = -1;
+
+    if (matches.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "combobox-empty";
+      empty.textContent = "No matching airport - pick from the list";
+      list.appendChild(empty);
+    } else {
+      matches.forEach((a) => {
+        const item = document.createElement("div");
+        item.className = "combobox-item";
+        item.innerHTML = `<span>${a.city}</span><span class="code">${a.code}</span>`;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault(); // keep focus so we don't lose the click before it registers
+          select(a);
+        });
+        list.appendChild(item);
+      });
+    }
+    list.classList.remove("hidden");
+  }
+
+  function select(airport) {
+    input.value = `${airport.city} (${airport.code})`;
+    hidden.value = airport.code;
+    list.classList.add("hidden");
+  }
+
+  input.addEventListener("focus", () => render(""));
+  input.addEventListener("input", () => {
+    hidden.value = ""; // typing invalidates any previous selection until they pick again
+    render(input.value);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    const items = list.querySelectorAll(".combobox-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, items.length - 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+    } else if (e.key === "Enter" && activeIndex >= 0) {
+      e.preventDefault();
+      items[activeIndex].dispatchEvent(new Event("mousedown"));
+      return;
+    } else if (e.key === "Escape") {
+      list.classList.add("hidden");
+      return;
+    } else {
+      return;
+    }
+    items.forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!field.contains(e.target)) list.classList.add("hidden");
+  });
+}
+
+setupCombobox("origin");
+setupCombobox("destination");
+
 const form = document.getElementById("search-form");
 const submitBtn = document.getElementById("submit-btn");
 const resultCard = document.getElementById("result");
@@ -11,12 +107,18 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   resultCard.classList.add("hidden");
   errorCard.classList.add("hidden");
+
+  const origin = document.getElementById("origin-code").value;
+  const destination = document.getElementById("destination-code").value;
+  const flightDate = document.getElementById("flightDate").value;
+
+  if (!origin || !destination) {
+    showError("Please pick both airports from the dropdown list.");
+    return;
+  }
+
   submitBtn.disabled = true;
   submitBtn.textContent = "Predicting...";
-
-  const origin = document.getElementById("origin").value.trim().toUpperCase();
-  const destination = document.getElementById("destination").value.trim().toUpperCase();
-  const flightDate = document.getElementById("flightDate").value;
 
   try {
     const res = await fetch("/api/predict", {
