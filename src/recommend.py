@@ -40,6 +40,27 @@ def predict_curve(origin, destination, flight_date):
     return curve
 
 
+def _buy_window(remaining, best_day, best_price, margin=MIN_MEANINGFUL_SAVINGS):
+    """Contiguous block of days around best_day within `margin` of the best price.
+
+    A single "best day" implies more precision than the model actually has
+    (MAE is ~$23), so we surface a range of days that are all roughly as
+    good, rather than one exact day.
+    """
+    ordered = remaining.sort_values("days_before_departure", ascending=False).reset_index(drop=True)
+    within = ordered["predicted_fare"] <= best_price + margin
+    best_idx = ordered.index[ordered["days_before_departure"] == best_day][0]
+
+    lo = hi = best_idx
+    while lo > 0 and within[lo - 1]:
+        lo -= 1
+    while hi < len(ordered) - 1 and within[hi + 1]:
+        hi += 1
+
+    window_days = ordered.loc[lo:hi, "days_before_departure"]
+    return int(window_days.max()), int(window_days.min())  # (furthest out, closest in) in days_before_departure
+
+
 def recommend_purchase_timing(origin, destination, flight_date, today=None):
     today = today or date.today()
     days_left = (flight_date - today).days
@@ -69,12 +90,22 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None):
             "status": "buy_now",
             "current_price": round(current_price, 2),
             "days_left": days_left,
+            "today": today.isoformat(),
             "curve": curve_records,
             "message": f"Buy now - predicted price ${current_price:.2f}. "
                        f"Price is expected to stay about the same or rise before departure.",
         }
 
     wait_days = days_left - best_day
+    window_far_days, window_near_days = _buy_window(remaining, best_day, best_price)
+    window_start = flight_date - timedelta(days=window_far_days)
+    window_end = flight_date - timedelta(days=window_near_days)
+    best_date = flight_date - timedelta(days=best_day)
+
+    when_text = (
+        f"around {best_date:%b %-d}" if window_start == window_end
+        else f"between {window_start:%b %-d} and {window_end:%b %-d}"
+    )
     return {
         "status": "wait",
         "wait_days": wait_days,
@@ -82,9 +113,16 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None):
         "expected_best_price": round(best_price, 2),
         "expected_savings": round(savings, 2),
         "days_left": days_left,
+        "today": today.isoformat(),
+        "best_day": best_day,
+        "best_date": best_date.isoformat(),
+        "buy_window_start": window_start.isoformat(),
+        "buy_window_end": window_end.isoformat(),
+        "buy_window_start_days": window_far_days,
+        "buy_window_end_days": window_near_days,
         "curve": curve_records,
-        "message": f"Wait about {wait_days} more day(s). Price is predicted to drop from "
-                   f"${current_price:.2f} to ${best_price:.2f} (~${savings:.2f} savings).",
+        "message": f"Wait about {wait_days} more day(s) - buy {when_text}. Price is predicted to drop "
+                   f"from ${current_price:.2f} to ${best_price:.2f} (~${savings:.2f} savings).",
     }
 
 

@@ -147,6 +147,11 @@ function showError(msg) {
   document.getElementById("error-message").textContent = msg;
 }
 
+function formatDate(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function showResult(data) {
   resultCard.classList.remove("hidden");
   badge.textContent = data.status === "buy_now" ? "Buy now" : "Wait & save";
@@ -154,17 +159,21 @@ function showResult(data) {
   message.textContent = data.message;
 
   if (data.status === "wait") {
-    detail.textContent = `Current: $${data.current_price} -> Predicted best: $${data.expected_best_price} in ${data.wait_days} day(s)`;
+    const range = data.buy_window_start === data.buy_window_end
+      ? formatDate(data.best_date)
+      : `${formatDate(data.buy_window_start)} - ${formatDate(data.buy_window_end)}`;
+    detail.textContent = `Buy: ${range} · Today: $${data.current_price} → Predicted: $${data.expected_best_price}`;
   } else {
-    detail.textContent = `Predicted price: $${data.current_price}`;
+    detail.textContent = `Today (${formatDate(data.today)}) · Predicted price: $${data.current_price}`;
   }
 
   if (data.curve && data.curve.length) {
-    drawChart(data.curve, data.days_left);
+    drawChart(data);
   }
 }
 
-function drawChart(curve, daysLeft) {
+function drawChart(data) {
+  const { curve, days_left: daysLeft, status } = data;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   const padding = { top: 20, right: 20, bottom: 30, left: 50 };
@@ -174,6 +183,8 @@ function drawChart(curve, daysLeft) {
   const points = curve.filter(p => p.days_before_departure <= daysLeft)
                        .sort((a, b) => b.days_before_departure - a.days_before_departure);
   if (points.length < 2) return;
+
+  const idxOf = (days) => points.findIndex(p => p.days_before_departure === days);
 
   const prices = points.map(p => p.predicted_fare);
   const minP = Math.min(...prices), maxP = Math.max(...prices);
@@ -190,6 +201,17 @@ function drawChart(curve, daysLeft) {
   ctx.lineTo(padding.left, h - padding.bottom);
   ctx.lineTo(w - padding.right, h - padding.bottom);
   ctx.stroke();
+
+  // shaded buy window, drawn first so the price line sits on top of it
+  if (status === "wait") {
+    const startIdx = idxOf(data.buy_window_start_days);
+    const endIdx = idxOf(data.buy_window_end_days);
+    if (startIdx !== -1 && endIdx !== -1) {
+      const x1 = xFor(startIdx), x2 = xFor(endIdx);
+      ctx.fillStyle = "rgba(46, 158, 107, 0.12)";
+      ctx.fillRect(Math.min(x1, x2), padding.top, Math.abs(x2 - x1) || 2, h - padding.top - padding.bottom);
+    }
+  }
 
   // price line
   ctx.strokeStyle = "#4a90d9";
@@ -221,39 +243,52 @@ function drawChart(curve, daysLeft) {
   ctx.textAlign = "right";
   ctx.fillText("Departure", w - padding.right, h - padding.bottom + 20);
 
-  // turning point: the cheapest day in the window - prices are predicted to
-  // climb after this, so mark it explicitly instead of leaving it implicit
-  let minIdx = 0;
-  points.forEach((p, i) => { if (p.predicted_fare < points[minIdx].predicted_fare) minIdx = i; });
-  const turningPoint = points[minIdx];
-  const tx = xFor(minIdx), ty = yFor(turningPoint.predicted_fare);
-
-  ctx.save();
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "#d98a2f";
-  ctx.lineWidth = 1;
+  // "Today" marker - always the leftmost point, since the chart only shows
+  // the window from today through departure
+  const todayX = xFor(0), todayY = yFor(points[0].predicted_fare);
   ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(tx, h - padding.bottom);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.beginPath();
-  ctx.arc(tx, ty, 4.5, 0, Math.PI * 2);
-  ctx.fillStyle = "#d98a2f";
+  ctx.arc(todayX, todayY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#2f6fb0";
   ctx.fill();
   ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.stroke();
-
-  const nearRightEdge = tx > w - padding.right - 100;
-  ctx.fillStyle = "#d98a2f";
+  ctx.fillStyle = "#2f6fb0";
   ctx.font = "600 12px Inter, sans-serif";
-  ctx.textAlign = nearRightEdge ? "right" : "left";
-  const labelX = nearRightEdge ? tx - 8 : tx + 8;
-  const labelY = Math.max(ty - 10, padding.top + 10);
-  const label = minIdx < points.length - 1
-    ? `Rises after ${turningPoint.days_before_departure}d out`
-    : `Lowest: $${Math.round(turningPoint.predicted_fare)}`;
-  ctx.fillText(label, labelX, labelY);
+  ctx.textAlign = "left";
+  ctx.fillText("Today", todayX + 8, Math.max(todayY - 10, padding.top + 10));
+
+  // best-buy-day marker + dashed guide, only meaningful when we're recommending a wait
+  if (status === "wait") {
+    const bestIdx = idxOf(data.best_day);
+    if (bestIdx !== -1) {
+      const bx = xFor(bestIdx), by = yFor(points[bestIdx].predicted_fare);
+
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "#d98a2f";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx, h - padding.bottom);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#d98a2f";
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const nearRightEdge = bx > w - padding.right - 100;
+      ctx.fillStyle = "#d98a2f";
+      ctx.font = "600 12px Inter, sans-serif";
+      ctx.textAlign = nearRightEdge ? "right" : "left";
+      const labelX = nearRightEdge ? bx - 8 : bx + 8;
+      const labelY = Math.max(by - 10, padding.top + 10);
+      ctx.fillText(formatDate(data.best_date), labelX, labelY);
+    }
+  }
 }
