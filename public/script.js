@@ -118,4 +118,40 @@ function drawChart(curve, daysLeft) {
   ctx.fillText(`${points[0].days_before_departure}d out`, padding.left, h - padding.bottom + 20);
   ctx.textAlign = "right";
   ctx.fillText("Departure", w - padding.right, h - padding.bottom + 20);
+
+  // turning point: the cheapest day in the window - prices are predicted to
+  // climb after this, so mark it explicitly instead of leaving it implicit
+  let minIdx = 0;
+  points.forEach((p, i) => { if (p.predicted_fare < points[minIdx].predicted_fare) minIdx = i; });
+  const turningPoint = points[minIdx];
+  const tx = xFor(minIdx), ty = yFor(turningPoint.predicted_fare);
+
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "#d98a2f";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx, h - padding.bottom);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(tx, ty, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#d98a2f";
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const nearRightEdge = tx > w - padding.right - 100;
+  ctx.fillStyle = "#d98a2f";
+  ctx.font = "600 12px Inter, sans-serif";
+  ctx.textAlign = nearRightEdge ? "right" : "left";
+  const labelX = nearRightEdge ? tx - 8 : tx + 8;
+  const labelY = Math.max(ty - 10, padding.top + 10);
+  const label = minIdx < points.length - 1
+    ? `Rises after ${turningPoint.days_before_departure}d out`
+    : `Lowest: $${Math.round(turningPoint.predicted_fare)}`;
+  ctx.fillText(label, labelX, labelY);
 }
