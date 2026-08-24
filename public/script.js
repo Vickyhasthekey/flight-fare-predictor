@@ -111,9 +111,17 @@ form.addEventListener("submit", async (e) => {
   const origin = document.getElementById("origin-code").value;
   const destination = document.getElementById("destination-code").value;
   const flightDate = document.getElementById("flightDate").value;
+  const currentPriceRaw = document.getElementById("currentPrice").value.trim();
+  const currentPrice = currentPriceRaw === "" ? null : Number(currentPriceRaw);
+  const nonstopOnly = document.getElementById("nonstopOnly").checked;
 
   if (!origin || !destination) {
     showError("Please pick both airports from the dropdown list.");
+    return;
+  }
+
+  if (currentPriceRaw !== "" && !(currentPrice > 0)) {
+    showError("Enter today's fare as a positive number, or leave it blank.");
     return;
   }
 
@@ -124,7 +132,7 @@ form.addEventListener("submit", async (e) => {
     const res = await fetch("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin, destination, flightDate }),
+      body: JSON.stringify({ origin, destination, flightDate, currentPrice, nonstopOnly }),
     });
     const data = await res.json();
 
@@ -162,9 +170,9 @@ function showResult(data) {
     const range = data.buy_window_start === data.buy_window_end
       ? formatDate(data.best_date)
       : `${formatDate(data.buy_window_start)} - ${formatDate(data.buy_window_end)}`;
-    detail.textContent = `Buy: ${range} · Today: $${data.current_price} → Predicted: $${data.expected_best_price}`;
+    detail.textContent = `Buy: ${range} · Estimated savings: ~$${data.expected_savings}`;
   } else {
-    detail.textContent = `Today (${formatDate(data.today)}) · Predicted price: $${data.current_price}`;
+    detail.textContent = `Today (${formatDate(data.today)})`;
   }
 
   if (data.curve && data.curve.length) {
@@ -173,7 +181,7 @@ function showResult(data) {
 }
 
 function drawChart(data) {
-  const { curve, days_left: daysLeft, status } = data;
+  const { curve, days_left: daysLeft } = data;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   const padding = { top: 20, right: 20, bottom: 30, left: 50 };
@@ -202,14 +210,23 @@ function drawChart(data) {
   ctx.lineTo(w - padding.right, h - padding.bottom);
   ctx.stroke();
 
-  // shaded buy window, drawn first so the price line sits on top of it
-  if (status === "wait") {
+  // shaded buy window, drawn first so the price line sits on top of it -
+  // this exists for buy_now too (the window just happens to include today)
+  {
     const startIdx = idxOf(data.buy_window_start_days);
     const endIdx = idxOf(data.buy_window_end_days);
     if (startIdx !== -1 && endIdx !== -1) {
       const x1 = xFor(startIdx), x2 = xFor(endIdx);
+      const boxLeft = Math.min(x1, x2), boxWidth = Math.abs(x2 - x1) || 2;
       ctx.fillStyle = "rgba(46, 158, 107, 0.12)";
-      ctx.fillRect(Math.min(x1, x2), padding.top, Math.abs(x2 - x1) || 2, h - padding.top - padding.bottom);
+      ctx.fillRect(boxLeft, padding.top, boxWidth, h - padding.top - padding.bottom);
+
+      if (boxWidth > 70) {
+        ctx.fillStyle = "#2e9e6b";
+        ctx.font = "600 11px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Best time to buy", boxLeft + boxWidth / 2, padding.top + 14);
+      }
     }
   }
 
@@ -258,8 +275,9 @@ function drawChart(data) {
   ctx.textAlign = "left";
   ctx.fillText("Today", todayX + 8, Math.max(todayY - 10, padding.top + 10));
 
-  // best-buy-day marker + dashed guide, only meaningful when we're recommending a wait
-  if (status === "wait") {
+  // best-buy-day marker + dashed guide - skipped when the best day is today,
+  // since that would just draw on top of the "Today" dot
+  if (data.best_day !== daysLeft) {
     const bestIdx = idxOf(data.best_day);
     if (bestIdx !== -1) {
       const bx = xFor(bestIdx), by = yFor(points[bestIdx].predicted_fare);

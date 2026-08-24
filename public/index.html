@@ -37,10 +37,18 @@
         <input type="hidden" id="destination-code">
         <div class="combobox-list hidden" id="destination-list"></div>
       </div>
-      <div class="field">
+      <div class="field full">
         <label for="flightDate">Flight date</label>
         <input type="date" id="flightDate" name="flightDate" required>
       </div>
+      <div class="field full">
+        <label for="currentPrice">Today's fare (USD)</label>
+        <input type="number" id="currentPrice" name="currentPrice" min="1" step="0.01" placeholder="Optional — pins the curve to the price you see now">
+      </div>
+      <label class="checkbox-field full">
+        <input type="checkbox" id="nonstopOnly">
+        <span>Nonstop only <span class="hint">— off by default, so connecting flights are included</span></span>
+      </label>
       <button type="submit" id="submit-btn">Predict</button>
     </form>
   </section>

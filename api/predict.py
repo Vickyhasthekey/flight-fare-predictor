@@ -29,6 +29,21 @@ def handler(environ, start_response):
         origin = str(body.get("origin", "")).strip().upper()
         destination = str(body.get("destination", "")).strip().upper()
         flight_date_str = str(body.get("flightDate", "")).strip()
+        nonstop_only = bool(body.get("nonstopOnly", False))
+        current_price = body.get("currentPrice", None)
+        if current_price == "" or current_price is None:
+            current_price = None
+        else:
+            try:
+                current_price = float(current_price)
+            except (TypeError, ValueError):
+                return _respond(start_response, 400, {
+                    "status": "error", "message": "Current price must be a number.",
+                })
+            if current_price <= 0:
+                return _respond(start_response, 400, {
+                    "status": "error", "message": "Current price must be greater than 0.",
+                })
 
         if len(origin) != VALID_AIRPORT_LEN or len(destination) != VALID_AIRPORT_LEN:
             return _respond(start_response, 400,
@@ -38,7 +53,10 @@ def handler(environ, start_response):
         except ValueError:
             return _respond(start_response, 400, {"status": "error", "message": "Enter a valid flight date."})
 
-        result = recommend_purchase_timing(origin, destination, flight_date)
+        result = recommend_purchase_timing(
+            origin, destination, flight_date,
+            current_price=current_price, nonstop_only=nonstop_only,
+        )
         return _respond(start_response, 200, result)
     except Exception as e:
         return _respond(start_response, 500, {"status": "error", "message": f"Server error: {e}"})

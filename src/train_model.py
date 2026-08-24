@@ -1,144 +1,252 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import duckdb
+import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-DATA_PATH = "data/training_table.parquet"
-FEATURE_COLS = [
-    "days_before_departure", "departure_day_of_week", "departure_month", "search_day_of_week",
-    "totalTravelDistance",
-]
+from src.metrics import buy_wait_agree, cheapest_day_error, curve_spearman
+from src.remaining_curve import FEATURE_COLS, attach_features
 
-con = duckdb.connect()
-df = con.execute(f"SELECT * FROM '{DATA_PATH}'").fetchdf()
-df["route"] = df["startingAirport"] + "-" + df["destinationAirport"]
-print(f"Loaded {len(df):,} rows, {df['route'].nunique()} routes")
-
-# Three-way time-based split: train (70%) to fit models, validation (15%) to
-# compare hyperparameters, test (15%) touched exactly once at the end for the
-# final reported number. Using the test set to pick hyperparameters would
-# leak information and make the reported accuracy overly optimistic.
-unique_dates = np.sort(df["flightDate"].unique())
-train_cutoff = unique_dates[int(len(unique_dates) * 0.70)]
-val_cutoff = unique_dates[int(len(unique_dates) * 0.85)]
-
-train_df = df[df["flightDate"] < train_cutoff].copy()
-val_df = df[(df["flightDate"] >= train_cutoff) & (df["flightDate"] < val_cutoff)].copy()
-test_df = df[df["flightDate"] >= val_cutoff].copy()
-print(f"Train: {len(train_df):,} rows (before {train_cutoff})")
-print(f"Val:   {len(val_df):,} rows ({train_cutoff} to {val_cutoff})")
-print(f"Test:  {len(test_df):,} rows (from {val_cutoff} on)\n")
-
-global_mean = train_df["best_fare"].mean()
-route_target = train_df.groupby("route")["best_fare"].mean()
-for d in (train_df, val_df, test_df):
-    d["route_encoded"] = d["route"].map(route_target).fillna(global_mean)
-
-all_routes = df["route"].astype("category").cat.categories
-for d in (train_df, val_df, test_df):
-    d["route_cat"] = d["route"].astype("category").cat.set_categories(all_routes)
+DAILY_PATH = "data/training_table.parquet"
+PAIRS_PATH = "data/remaining_pairs.parquet"
+MODEL_PATH = "models/price_model.joblib"
+AS_OF_STRIDE = 2
+TIMING_SAMPLE = 1200
+MIN_CURVE_DAYS = 8
 
 
-def mae_rmse(y_true, y_pred):
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+def build_pairs():
+    con = duckdb.connect()
+    con.execute(f"""
+        COPY (
+            WITH daily AS (
+                SELECT
+                    startingAirport || '-' || destinationAirport AS route,
+                    startingAirport,
+                    destinationAirport,
+                    flightDate,
+                    isNonStop,
+                    days_before_departure,
+                    best_fare,
+                    departure_day_of_week,
+                    departure_month,
+                    search_day_of_week,
+                    totalTravelDistance,
+                    CAST(flightDate AS DATE) - CAST(days_before_departure AS INTEGER) AS as_of_date
+                FROM '{DAILY_PATH}'
+            ),
+            as_of AS (
+                SELECT d.* FROM daily d
+                INNER JOIN (
+                    SELECT startingAirport, destinationAirport, flightDate, isNonStop,
+                           MAX(days_before_departure) AS max_days
+                    FROM daily
+                    GROUP BY startingAirport, destinationAirport, flightDate, isNonStop
+                ) m USING (startingAirport, destinationAirport, flightDate, isNonStop)
+                WHERE d.days_before_departure = m.max_days
+                   OR d.days_before_departure IN (21, 14, 7)
+            )
+            SELECT
+                a.route,
+                a.startingAirport,
+                a.destinationAirport,
+                a.flightDate,
+                a.isNonStop,
+                a.as_of_date,
+                a.days_before_departure AS as_of_days,
+                b.days_before_departure,
+                a.best_fare AS current_fare,
+                b.best_fare AS future_fare,
+                LEAST(3.0, GREATEST(0.3, b.best_fare / a.best_fare)) AS rel_fare,
+                a.departure_day_of_week,
+                a.departure_month,
+                b.search_day_of_week,
+                a.totalTravelDistance
+            FROM as_of a
+            INNER JOIN daily b
+              ON a.startingAirport = b.startingAirport
+             AND a.destinationAirport = b.destinationAirport
+             AND a.flightDate = b.flightDate
+             AND a.isNonStop = b.isNonStop
+            WHERE b.days_before_departure <= a.days_before_departure
+              AND a.best_fare > 1
+        ) TO '{PAIRS_PATH}' (FORMAT PARQUET)
+    """)
+    n = con.execute(f"SELECT COUNT(*) FROM '{PAIRS_PATH}'").fetchone()[0]
+    print(f"Remaining-curve pairs: {n:,}")
+    return n
+
+
+def time_split(df, date_col):
+    unique_dates = np.sort(df[date_col].unique())
+    train_cutoff = unique_dates[int(len(unique_dates) * 0.70)]
+    val_cutoff = unique_dates[int(len(unique_dates) * 0.85)]
+    train = df[df[date_col] < train_cutoff].copy()
+    val = df[(df[date_col] >= train_cutoff) & (df[date_col] < val_cutoff)].copy()
+    test = df[df[date_col] >= val_cutoff].copy()
+    print(f"Train: {len(train):,}  Val: {len(val):,}  Test: {len(test):,}")
+    print(f"  cutoffs as_of_date < {train_cutoff} / < {val_cutoff}")
+    return train, val, test, train_cutoff, val_cutoff
+
+
+def dollar_metrics(y, p):
+    mae = mean_absolute_error(y, p)
+    rmse = float(np.sqrt(mean_squared_error(y, p)))
     return mae, rmse
 
 
-def report_fit(name, predict_fn):
-    """Print train vs val MAE side by side - a big gap means overfitting."""
-    train_mae, train_rmse = mae_rmse(train_df["best_fare"], predict_fn(train_df))
-    val_mae, val_rmse = mae_rmse(val_df["best_fare"], predict_fn(val_df))
-    gap = val_mae - train_mae
-    flag = "  <-- overfitting (train much better than val)" if gap > train_mae * 0.5 else ""
-    print(f"{name:32s} train MAE=${train_mae:6.2f}  val MAE=${val_mae:6.2f}  gap=${gap:6.2f}{flag}")
-    return val_mae
+def score_timing(daily, model, route_categories, n_curves=TIMING_SAMPLE, seed=0):
+    """Buy/wait + cheapest-day + Spearman on sampled (route, date, stop-type) curves."""
+    daily = daily.copy()
+    if "route" not in daily.columns:
+        daily["route"] = daily["startingAirport"] + "-" + daily["destinationAirport"]
+    keys = ["route", "flightDate", "isNonStop"]
+    eligible = daily.groupby(keys).size().reset_index(name="n")
+    eligible = eligible[eligible["n"] >= MIN_CURVE_DAYS]
+    if len(eligible) == 0:
+        return {"buy_wait": 0.0, "median_best_day_err": 99.0, "median_spearman": 0.0, "remain_rmse": 999.0, "n": 0}
+    sample = eligible.sample(n=min(n_curves, len(eligible)), random_state=seed)
+    subset = daily.merge(sample[keys], on=keys)
+
+    buy, err, spear, sq = [], [], [], []
+    for _, g in subset.groupby(keys, sort=False):
+        available = np.sort(g["days_before_departure"].unique())
+        as_of_days = int(available[np.argmin(np.abs(available - 21))])
+        if as_of_days < 5:
+            continue
+        as_of_fare = float(g.loc[g["days_before_departure"] == as_of_days, "best_fare"].iloc[0])
+        rem = g[g["days_before_departure"] <= as_of_days].copy()
+        rem["as_of_days"] = as_of_days
+        rem["current_fare"] = as_of_fare
+        feat = attach_features(rem, route_categories)
+        pred = np.clip(model.predict(feat[FEATURE_COLS]), 0.3, 3.0) * as_of_fare
+        pred = np.where(rem["days_before_departure"].to_numpy() == as_of_days, as_of_fare, pred)
+        days = rem["days_before_departure"].to_numpy()
+        actual = rem["best_fare"].to_numpy()
+        buy.append(buy_wait_agree(days, actual, pred, as_of_days))
+        err.append(cheapest_day_error(days, actual, pred))
+        sp = curve_spearman(actual, pred)
+        if np.isfinite(sp):
+            spear.append(sp)
+        sq.append(np.mean((actual - pred) ** 2))
+
+    return {
+        "buy_wait": float(np.mean(buy)) if buy else 0.0,
+        "median_best_day_err": float(np.median(err)) if err else 99.0,
+        "median_spearman": float(np.median(spear)) if spear else 0.0,
+        "remain_rmse": float(np.sqrt(np.mean(sq))) if sq else 999.0,
+        "n": len(buy),
+    }
 
 
-print("=== Step 1: overfitting check on the models we already have ===")
-
-baseline_lookup = (
-    train_df.groupby(["route", "days_before_departure"])["best_fare"]
-    .mean()
-    .rename("pred_baseline")
-)
-
-
-def predict_baseline(d):
-    return d.set_index(["route", "days_before_departure"]).index.map(baseline_lookup).to_numpy(dtype=float)
+def report_timing(name, stats):
+    print(
+        f"{name:32s} buy/wait={stats['buy_wait']:.3f}  "
+        f"best-day err={stats['median_best_day_err']:.1f}d  "
+        f"Spearman={stats['median_spearman']:.3f}  "
+        f"remain RMSE=${stats['remain_rmse']:.2f}  n={stats['n']}"
+    )
+    return (stats["buy_wait"], -stats["median_best_day_err"], stats["median_spearman"])
 
 
-# baseline can't predict for (route, day) combos it never saw in train - those
-# come back as NaN, fill with the global mean like before
-def predict_baseline_filled(d):
-    pred = predict_baseline(d)
-    return np.where(np.isnan(pred), global_mean, pred)
+def main():
+    if not os.path.exists(PAIRS_PATH):
+        print("=== Building remaining-curve pairs (searchDate walk-forward) ===")
+        build_pairs()
+    else:
+        print(f"Using existing {PAIRS_PATH}")
+
+    con = duckdb.connect()
+    n_pairs = con.execute(f"SELECT COUNT(*) FROM '{PAIRS_PATH}'").fetchone()[0]
+    max_pairs = 3_000_000
+    if n_pairs > max_pairs:
+        print(f"Sampling {max_pairs:,} of {n_pairs:,} pairs for fitting (timing eval still uses full daily curves)")
+        pairs = con.execute(
+            f"SELECT * FROM '{PAIRS_PATH}' USING SAMPLE {max_pairs} (reservoir, 42)"
+        ).fetchdf()
+    else:
+        pairs = con.execute(f"SELECT * FROM '{PAIRS_PATH}'").fetchdf()
+    daily = con.execute(f"SELECT * FROM '{DAILY_PATH}'").fetchdf()
+    pairs["as_of_date"] = pd.to_datetime(pairs["as_of_date"])
+    daily["flightDate"] = pd.to_datetime(daily["flightDate"])
+    pairs["route"] = pairs["startingAirport"] + "-" + pairs["destinationAirport"]
+    print(f"Loaded {len(pairs):,} pairs, {len(daily):,} daily rows")
+
+    train, val, test, train_cutoff, val_cutoff = time_split(pairs, "as_of_date")
+    daily["route"] = daily["startingAirport"] + "-" + daily["destinationAirport"]
+    all_routes = daily["route"].astype("category").cat.categories
+
+    train_f = attach_features(train, all_routes)
+    val_f = attach_features(val, all_routes)
+    test_f = attach_features(test, all_routes)
+
+    daily["searchDate"] = daily["flightDate"] - pd.to_timedelta(daily["days_before_departure"], unit="D")
+    daily_val = daily[
+        (daily["searchDate"] >= pd.Timestamp(train_cutoff))
+        & (daily["searchDate"] < pd.Timestamp(val_cutoff))
+    ]
+    daily_test = daily[daily["searchDate"] >= pd.Timestamp(val_cutoff)]
+
+    configs = {
+        "default": dict(max_iter=300, learning_rate=0.1, max_leaf_nodes=31, random_state=42),
+        "more trees, lower lr": dict(max_iter=500, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
+        "shallower + regularized": dict(
+            max_iter=300, learning_rate=0.08, max_leaf_nodes=15,
+            min_samples_leaf=50, l2_regularization=1.0, random_state=42,
+        ),
+    }
+
+    print("\n=== Fit relative remaining-curve models; select on timing metrics ===")
+    best_name, best_key, best_model = None, None, None
+    for name, params in configs.items():
+        model = HistGradientBoostingRegressor(categorical_features="from_dtype", **params)
+        model.fit(train_f[FEATURE_COLS], train_f["rel_fare"])
+        stats = score_timing(daily_val, model, all_routes)
+        key = report_timing(name, stats)
+        if best_key is None or key > best_key:
+            best_name, best_key, best_model = name, key, model
+
+    print(f"\nBest on validation: {best_name}")
+
+    print("\n=== Test (searchDate holdout) ===")
+    test_stats = score_timing(daily_test, best_model, all_routes, n_curves=min(2000, TIMING_SAMPLE * 2), seed=1)
+    report_timing(f"TEST {best_name}", test_stats)
+    pred_rel = np.clip(best_model.predict(test_f[FEATURE_COLS]), 0.3, 3.0)
+    pred_fare = pred_rel * test_f["current_fare"].to_numpy()
+    # pin same-day
+    same = test_f["days_before_departure"].to_numpy() == test_f["as_of_days"].to_numpy()
+    pred_fare = np.where(same, test_f["current_fare"].to_numpy(), pred_fare)
+    mae, rmse = dollar_metrics(test_f["future_fare"], pred_fare)
+    print(f"TEST remaining-curve MAE=${mae:.2f}  RMSE=${rmse:.2f}  (diagnostic, not the selection metric)")
+
+    print("\n=== Refit on train+val and save ===")
+    best_params = {p: v for p, v in best_model.get_params().items() if v is not None}
+    final_model = HistGradientBoostingRegressor(**best_params)
+    train_plus_val = pd.concat([train_f, val_f], ignore_index=True)
+    final_model.fit(train_plus_val[FEATURE_COLS], train_plus_val["rel_fare"])
+
+    route_distance = daily.groupby("route")["totalTravelDistance"].median()
+    route_median_fare = daily.groupby("route")["best_fare"].median()
+
+    os.makedirs("models", exist_ok=True)
+    joblib.dump({
+        "model": final_model,
+        "model_kind": "relative_remaining",
+        "route_categories": all_routes,
+        "feature_cols": FEATURE_COLS,
+        "route_distance": route_distance,
+        "global_median_distance": float(daily["totalTravelDistance"].median()),
+        "route_median_fare": route_median_fare,
+        "global_median_fare": float(daily["best_fare"].median()),
+    }, MODEL_PATH)
+    print(f"Saved {MODEL_PATH}")
 
 
-report_fit("Historical average", predict_baseline_filled)
-
-rf_features = ["route_encoded"] + FEATURE_COLS
-rf_default = RandomForestRegressor(n_estimators=100, max_depth=14, n_jobs=2, random_state=42)
-rf_default.fit(train_df[rf_features], train_df["best_fare"])
-report_fit("Random Forest (original config)", lambda d: rf_default.predict(d[rf_features]))
-
-hgb_features = ["route_cat"] + FEATURE_COLS
-hgb_default = HistGradientBoostingRegressor(categorical_features="from_dtype", max_iter=300, random_state=42)
-hgb_default.fit(train_df[hgb_features], train_df["best_fare"])
-report_fit("HistGradientBoosting (original config)", lambda d: hgb_default.predict(d[hgb_features]))
-
-print("\n=== Step 2: try more regularized HistGradientBoosting configs on val ===")
-hgb_configs = {
-    "more trees, lower lr": dict(max_iter=600, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-    "shallower + regularized": dict(max_iter=300, learning_rate=0.1, max_leaf_nodes=15,
-                                     min_samples_leaf=50, l2_regularization=1.0, random_state=42),
-    "deeper (more capacity)": dict(max_iter=300, learning_rate=0.1, max_leaf_nodes=63, random_state=42),
-}
-
-best_name, best_val_mae, best_model = None, float("inf"), hgb_default
-val_mae_default = report_fit("  -> default (baseline for this step)", lambda d: hgb_default.predict(d[hgb_features]))
-if val_mae_default < best_val_mae:
-    best_name, best_val_mae = "default", val_mae_default
-
-for name, params in hgb_configs.items():
-    model = HistGradientBoostingRegressor(categorical_features="from_dtype", **params)
-    model.fit(train_df[hgb_features], train_df["best_fare"])
-    val_mae = report_fit(f"  -> {name}", lambda d, m=model: m.predict(d[hgb_features]))
-    if val_mae < best_val_mae:
-        best_name, best_val_mae, best_model = name, val_mae, model
-
-print(f"\nBest config on validation: {best_name} (val MAE=${best_val_mae:.2f})")
-
-print("\n=== Step 3: final, one-time evaluation on the untouched test set ===")
-test_mae, test_rmse = mae_rmse(test_df["best_fare"], best_model.predict(test_df[hgb_features]))
-print(f"Final HistGradientBoosting ({best_name}) on TEST: MAE=${test_mae:.2f}  RMSE=${test_rmse:.2f}")
-
-print("\n=== Step 4: refit best config on train+val, save for reuse ===")
-# The test MAE above reflects a model that only ever saw train_df. Now that
-# hyperparameters are chosen, refit on train+val (more data, val no longer
-# needs to be held back) to get the model we'll actually use for predictions.
-best_params = {p: v for p, v in best_model.get_params().items() if v is not None}
-final_model = HistGradientBoostingRegressor(**best_params)
-train_plus_val = pd.concat([train_df, val_df])
-final_model.fit(train_plus_val[hgb_features], train_plus_val["best_fare"])
-
-import joblib
-import os
-
-# Bundle the route-distance lookup into the model artifact too, so anything
-# that loads this file (like the website's API) is fully self-contained and
-# never needs data/training_table.parquet at runtime - that file is too big
-# to commit to git and won't exist in the deployed environment.
-route_distance = df.groupby("route")["totalTravelDistance"].median()
-global_median_distance = df["totalTravelDistance"].median()
-
-os.makedirs("models", exist_ok=True)
-joblib.dump({
-    "model": final_model,
-    "route_categories": all_routes,
-    "feature_cols": hgb_features,
-    "route_distance": route_distance,
-    "global_median_distance": global_median_distance,
-}, "models/price_model.joblib")
-print("Saved models/price_model.joblib")
+if __name__ == "__main__":
+    main()
