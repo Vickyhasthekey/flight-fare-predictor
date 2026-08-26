@@ -4,7 +4,7 @@ import sys
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from src.recommend import recommend_purchase_timing  # noqa: E402
+from src.recommend import normalize_stops, recommend_purchase_timing  # noqa: E402
 
 VALID_AIRPORT_LEN = 3
 
@@ -29,7 +29,15 @@ def handler(environ, start_response):
         origin = str(body.get("origin", "")).strip().upper()
         destination = str(body.get("destination", "")).strip().upper()
         flight_date_str = str(body.get("flightDate", "")).strip()
-        nonstop_only = bool(body.get("nonstopOnly", False))
+        try:
+            stops = normalize_stops(
+                stops=body.get("stops"),
+                nonstop_only=body.get("nonstopOnly"),
+            )
+        except ValueError:
+            return _respond(start_response, 400, {
+                "status": "error", "message": "Stops must be ALL, non-stop, or stop.",
+            })
         current_price = body.get("currentPrice", None)
         if current_price == "" or current_price is None:
             current_price = None
@@ -55,7 +63,8 @@ def handler(environ, start_response):
 
         result = recommend_purchase_timing(
             origin, destination, flight_date,
-            current_price=current_price, nonstop_only=nonstop_only,
+            current_price=current_price, stops=stops,
+            lookup_live=current_price is None,
         )
         return _respond(start_response, 200, result)
     except Exception as e:

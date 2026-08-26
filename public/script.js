@@ -100,7 +100,6 @@ const resultCard = document.getElementById("result");
 const errorCard = document.getElementById("error");
 const badge = document.getElementById("result-badge");
 const message = document.getElementById("result-message");
-const detail = document.getElementById("result-detail");
 const canvas = document.getElementById("price-chart");
 
 form.addEventListener("submit", async (e) => {
@@ -113,7 +112,7 @@ form.addEventListener("submit", async (e) => {
   const flightDate = document.getElementById("flightDate").value;
   const currentPriceRaw = document.getElementById("currentPrice").value.trim();
   const currentPrice = currentPriceRaw === "" ? null : Number(currentPriceRaw);
-  const nonstopOnly = document.getElementById("nonstopOnly").checked;
+  const stops = document.getElementById("stops").value;
 
   if (!origin || !destination) {
     showError("Please pick both airports from the dropdown list.");
@@ -126,13 +125,13 @@ form.addEventListener("submit", async (e) => {
   }
 
   submitBtn.disabled = true;
-  submitBtn.textContent = "Predicting...";
+  submitBtn.textContent = currentPriceRaw === "" ? "Looking up today's fare…" : "Predicting...";
 
   try {
     const res = await fetch("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin, destination, flightDate, currentPrice, nonstopOnly }),
+      body: JSON.stringify({ origin, destination, flightDate, currentPrice, stops }),
     });
     const data = await res.json();
 
@@ -165,15 +164,6 @@ function showResult(data) {
   badge.textContent = data.status === "buy_now" ? "Buy now" : "Wait & save";
   badge.className = "badge " + (data.status === "buy_now" ? "buy-now" : "wait");
   message.textContent = data.message;
-
-  if (data.status === "wait") {
-    const range = data.buy_window_start === data.buy_window_end
-      ? formatDate(data.best_date)
-      : `${formatDate(data.buy_window_start)} - ${formatDate(data.buy_window_end)}`;
-    detail.textContent = `Buy: ${range} · Estimated savings: ~$${data.expected_savings}`;
-  } else {
-    detail.textContent = `Today (${formatDate(data.today)})`;
-  }
 
   if (data.curve && data.curve.length) {
     drawChart(data);
@@ -217,16 +207,18 @@ function drawChart(data) {
     const endIdx = idxOf(data.buy_window_end_days);
     if (startIdx !== -1 && endIdx !== -1) {
       const x1 = xFor(startIdx), x2 = xFor(endIdx);
-      const boxLeft = Math.min(x1, x2), boxWidth = Math.abs(x2 - x1) || 2;
+      const boxLeft = Math.min(x1, x2);
+      const boxWidth = Math.max(Math.abs(x2 - x1), 10);
       ctx.fillStyle = "rgba(46, 158, 107, 0.12)";
       ctx.fillRect(boxLeft, padding.top, boxWidth, h - padding.top - padding.bottom);
 
-      if (boxWidth > 70) {
-        ctx.fillStyle = "#2e9e6b";
-        ctx.font = "600 11px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("Best time to buy", boxLeft + boxWidth / 2, padding.top + 14);
-      }
+      ctx.fillStyle = "#2e9e6b";
+      ctx.font = "600 11px Inter, sans-serif";
+      ctx.textAlign = "center";
+      const windowLabel = data.buy_window_start === data.buy_window_end
+        ? formatDate(data.best_date)
+        : `${formatDate(data.buy_window_start)} – ${formatDate(data.buy_window_end)}`;
+      ctx.fillText(`Buy ${windowLabel}`, boxLeft + boxWidth / 2, padding.top + 14);
     }
   }
 
@@ -254,14 +246,13 @@ function drawChart(data) {
   ctx.fillText(`$${Math.round(maxP)}`, padding.left - 8, padding.top + 4);
   ctx.fillText(`$${Math.round(minP)}`, padding.left - 8, h - padding.bottom);
 
-  // x-axis labels (first and last day)
+  // x-axis: calendar dates, not "37d out"
   ctx.textAlign = "left";
-  ctx.fillText(`${points[0].days_before_departure}d out`, padding.left, h - padding.bottom + 20);
+  ctx.fillText(formatDate(data.today), padding.left, h - padding.bottom + 20);
   ctx.textAlign = "right";
-  ctx.fillText("Departure", w - padding.right, h - padding.bottom + 20);
+  ctx.fillText(formatDate(data.flight_date || data.buy_window_end), w - padding.right, h - padding.bottom + 20);
 
-  // "Today" marker - always the leftmost point, since the chart only shows
-  // the window from today through departure
+  // "Today" marker
   const todayX = xFor(0), todayY = yFor(points[0].predicted_fare);
   ctx.beginPath();
   ctx.arc(todayX, todayY, 5, 0, Math.PI * 2);
@@ -270,13 +261,20 @@ function drawChart(data) {
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.fillStyle = "#2f6fb0";
-  ctx.font = "600 12px Inter, sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillText("Today", todayX + 8, Math.max(todayY - 10, padding.top + 10));
 
-  // best-buy-day marker + dashed guide - skipped when the best day is today,
-  // since that would just draw on top of the "Today" dot
+  ctx.font = "600 12px Inter, sans-serif";
+  const todayText = `Today · ${formatDate(data.today)}`;
+  const todayW = ctx.measureText(todayText).width;
+  const minLabelY = padding.top + 28;
+  const maxLabelY = h - padding.bottom - 6;
+  const clampY = (y) => Math.min(Math.max(y, minLabelY), maxLabelY);
+  const todayLX = todayX + 8;
+  const todayLY = clampY(todayY - 12);
+  ctx.fillStyle = "#2f6fb0";
+  ctx.textAlign = "left";
+  ctx.fillText(todayText, todayLX, todayLY);
+
+  // lowest-price day: skip the label if it is today; otherwise keep it off Today's text
   if (data.best_day !== daysLeft) {
     const bestIdx = idxOf(data.best_day);
     if (bestIdx !== -1) {
@@ -300,13 +298,38 @@ function drawChart(data) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
+      const lowestText = `Lowest · ${formatDate(data.best_date)}`;
+      const lowestW = ctx.measureText(lowestText).width;
       const nearRightEdge = bx > w - padding.right - 100;
+      let lowAlign = nearRightEdge ? "right" : "left";
+      let lowX = nearRightEdge ? bx - 8 : bx + 8;
+      let lowY = clampY(by - 12);
+
+      const box = (x, y, width, align) => {
+        const left = align === "right" ? x - width : x;
+        return { left, right: left + width, y };
+      };
+      const collides = (a, b) =>
+        Math.abs(a.y - b.y) < 14 && a.left < b.right + 8 && b.left < a.right + 8;
+
+      const todayBox = box(todayLX, todayLY, todayW, "left");
+      if (collides(todayBox, box(lowX, lowY, lowestW, lowAlign))) {
+        lowAlign = "left";
+        lowX = todayLX + todayW + 12;
+        lowY = todayLY;
+        if (lowX + lowestW > w - padding.right) {
+          lowX = todayLX;
+          lowY = clampY(todayLY + 16);
+          if (collides(todayBox, box(lowX, lowY, lowestW, "left"))) {
+            lowY = clampY(todayLY - 16);
+          }
+        }
+      }
+
       ctx.fillStyle = "#d98a2f";
       ctx.font = "600 12px Inter, sans-serif";
-      ctx.textAlign = nearRightEdge ? "right" : "left";
-      const labelX = nearRightEdge ? bx - 8 : bx + 8;
-      const labelY = Math.max(by - 10, padding.top + 10);
-      ctx.fillText(formatDate(data.best_date), labelX, labelY);
+      ctx.textAlign = lowAlign;
+      ctx.fillText(lowestText, lowX, lowY);
     }
   }
 }

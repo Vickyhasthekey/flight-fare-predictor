@@ -64,7 +64,26 @@ class RecommendTests(unittest.TestCase):
             "ATL", "LAX", self.flight, current_price=200.0, today=self.today, nonstop_only=True,
         )
         day7 = float(curve.loc[curve["days_before_departure"] == 7, "predicted_fare"].iloc[0])
-        self.assertAlmostEqual(day7, 200.0 * 1.05, places=2)
+        # Nonstop rel is a flat 1.05; scaling to today's $200 keeps that flat shape at $200.
+        self.assertAlmostEqual(day7, 200.0, places=2)
+
+    def test_connecting_only_uses_the_connecting_curve(self):
+        curve = recommend.predict_curve(
+            "ATL", "LAX", self.flight, current_price=200.0, today=self.today, stops="connecting",
+        )
+        day7 = float(curve.loc[curve["days_before_departure"] == 7, "predicted_fare"].iloc[0])
+        self.assertAlmostEqual(day7, 200.0 * (0.70 + 0.30 * 7 / 21), places=2)
+
+    def test_stop_alias_is_connecting(self):
+        via_stop = recommend.predict_curve(
+            "ATL", "LAX", self.flight, current_price=200.0, today=self.today, stops="stop",
+        )
+        via_connecting = recommend.predict_curve(
+            "ATL", "LAX", self.flight, current_price=200.0, today=self.today, stops="connecting",
+        )
+        day7_stop = float(via_stop.loc[via_stop["days_before_departure"] == 7, "predicted_fare"].iloc[0])
+        day7_conn = float(via_connecting.loc[via_connecting["days_before_departure"] == 7, "predicted_fare"].iloc[0])
+        self.assertAlmostEqual(day7_stop, day7_conn)
 
     def test_any_itinerary_picks_the_cheaper_of_nonstop_and_connecting(self):
         any_curve = recommend.predict_curve(
@@ -84,6 +103,75 @@ class RecommendTests(unittest.TestCase):
         self.assertEqual(result["status"], "wait")
         self.assertEqual(result["current_price"], 200.0)
         self.assertGreater(result["expected_savings"], 8)
+        self.assertIn("between", result["message"])
+        self.assertIn("Mar", result["message"])
+        self.assertIn("Lowest predicted fare", result["message"])
+
+    def test_buy_now_message_names_calendar_dates(self):
+        result = recommend.recommend_purchase_timing(
+            "ATL", "LAX", self.flight, today=self.today, current_price=200.0,
+            nonstop_only=True,
+        )
+        self.assertEqual(result["status"], "buy_now")
+        self.assertTrue(
+            result["message"].startswith("Buy by ")
+            or result["message"].startswith("Buy between "),
+            result["message"],
+        )
+        self.assertIn("Mar", result["message"])
+
+    def test_user_fare_is_not_replaced_by_a_live_lookup(self):
+        result = recommend.recommend_purchase_timing(
+            "ATL", "LAX", self.flight, today=self.today, current_price=200.0,
+            lookup_live=True,
+        )
+        self.assertEqual(result["current_price"], 200.0)
+        self.assertEqual(result["price_source"], "user")
+        self.assertIn("200", result["price_source_label"])
+
+    def test_live_lookup_scales_the_curve_and_keeps_the_trend(self):
+        import src.live_price as live_price
+
+        def fake_fetch(url):
+            return '''
+            <div>Cheapest one-way</div><div class="c_nzd-price">$100</div>
+            "cheapestPopularOneWayFlight":{"deals":[
+            {"providerName":"JetBlue","price":{"price":100,"currency":"USD"},
+             "pickupDateIso":"2026-03-22","leg1Stops":1}
+            ]},"cheapestPopularDirectFlight":{}
+            '''
+
+        live_price.set_fetch(fake_fetch)
+        try:
+            result = recommend.recommend_purchase_timing(
+                "ATL", "LAX", self.flight, today=self.today, lookup_live=True,
+            )
+        finally:
+            live_price.set_fetch(None)
+        self.assertEqual(result["current_price"], 100.0)
+        self.assertEqual(result["price_source"], "web")
+        self.assertEqual(result["live_matched_date"], "2026-03-22")
+        day14 = next(p["predicted_fare"] for p in result["curve"] if p["days_before_departure"] == 14)
+        self.assertAlmostEqual(day14, 100.0 * (0.70 + 0.30 * 14 / 21), places=2)
+
+    def test_scales_whole_curve_when_today_relative_is_not_one(self):
+        class DriftModel:
+            def predict(self, X):
+                days = X["days_before_departure"].to_numpy(dtype=float)
+                return 0.50 + 0.01 * days
+
+        bundle = _bundle()
+        bundle["model"] = DriftModel()
+        recommend.set_bundle(bundle)
+        curve = recommend.predict_curve(
+            "ATL", "LAX", self.flight, current_price=200.0, today=self.today, nonstop_only=True,
+        )
+        today_row = curve.loc[curve["days_before_departure"] == 21].iloc[0]
+        day14 = float(curve.loc[curve["days_before_departure"] == 14, "predicted_fare"].iloc[0])
+        self.assertAlmostEqual(float(today_row["predicted_fare"]), 200.0)
+        today_rel = 0.50 + 0.01 * 21
+        day14_rel = 0.50 + 0.01 * 14
+        self.assertAlmostEqual(day14, 200.0 * day14_rel / today_rel, places=2)
 
 
 if __name__ == "__main__":

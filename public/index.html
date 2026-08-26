@@ -17,7 +17,7 @@
       <span class="brand-name">Flight Price Predictor</span>
     </div>
     <h1>Know when to buy, not just what it costs.</h1>
-    <p class="subtitle">Tell us your route and travel date - we'll predict the price curve and tell you whether to buy now or wait.</p>
+    <p class="subtitle">Tell us your route and travel date. We'll look up today's lowest published one-way, keep the predicted trend, and scale the dollars to that fare so you know whether to buy now or wait.</p>
     <a href="insights.html" class="hero-link">See the data behind this &rarr;</a>
   </div>
 </header>
@@ -43,12 +43,16 @@
       </div>
       <div class="field full">
         <label for="currentPrice">Today's fare (USD)</label>
-        <input type="number" id="currentPrice" name="currentPrice" min="1" step="0.01" placeholder="Optional — pins the curve to the price you see now">
+        <input type="number" id="currentPrice" name="currentPrice" min="1" step="0.01" placeholder="Leave blank to look up today's lowest published fare">
       </div>
-      <label class="checkbox-field full">
-        <input type="checkbox" id="nonstopOnly">
-        <span>Nonstop only <span class="hint">— off by default, so connecting flights are included</span></span>
-      </label>
+      <div class="field full">
+        <label for="stops">Stops</label>
+        <select id="stops" name="stops">
+          <option value="all" selected>ALL</option>
+          <option value="nonstop">Non-stop</option>
+          <option value="connecting">Stop</option>
+        </select>
+      </div>
       <button type="submit" id="submit-btn">Predict</button>
     </form>
   </section>
@@ -56,7 +60,6 @@
   <section id="result" class="result-card hidden">
     <div id="result-badge" class="badge"></div>
     <p id="result-message" class="result-message"></p>
-    <div id="result-detail" class="result-detail"></div>
     <canvas id="price-chart" width="600" height="260"></canvas>
   </section>
 
@@ -66,7 +69,7 @@
 </main>
 
 <footer>
-  <p>Built on historical Expedia search data &middot; predictions are estimates, not guarantees</p>
+  <p>Live lowest fare pins today's dollar level · predicted trend from 2022 Expedia search history · estimates, not guarantees</p>
 </footer>
 
 <script src="script.js"></script>

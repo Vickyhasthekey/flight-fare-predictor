@@ -110,7 +110,8 @@ main {
   letter-spacing: 0.03em;
 }
 
-.field input {
+.field input,
+.field select {
   border: 1.5px solid var(--sky);
   border-radius: 10px;
   padding: 12px 14px;
@@ -119,9 +120,19 @@ main {
   color: var(--ink);
   outline: none;
   transition: border-color 0.15s;
+  background: var(--white);
 }
 
-.field input:focus {
+.field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%235b6b7a' d='M1 1l5 5 5-5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+.field input:focus,
+.field select:focus {
   border-color: var(--blue);
 }
 
@@ -171,27 +182,8 @@ main {
   color: var(--ink-soft);
 }
 
-#search-form > .field.full,
-#search-form > .checkbox-field.full {
+#search-form > .field.full {
   grid-column: 1 / -1;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.checkbox-field input {
-  margin-top: 3px;
-}
-
-.checkbox-field .hint {
-  color: var(--ink-soft);
-  font-weight: 400;
 }
 
 #submit-btn {
@@ -245,14 +237,8 @@ main {
 .result-message {
   font-size: 18px;
   font-weight: 600;
-  margin: 0 0 8px;
+  margin: 0 0 20px;
   color: var(--ink);
-}
-
-.result-detail {
-  font-size: 14px;
-  color: var(--ink-soft);
-  margin-bottom: 20px;
 }
 
 #price-chart {
@@ -283,8 +269,7 @@ footer {
 @media (max-width: 480px) {
   .hero h1 { font-size: 28px; }
   #search-form { grid-template-columns: 1fr; }
-  #search-form > .field.full,
-  #search-form > .checkbox-field.full { grid-column: auto; }
+  #search-form > .field.full { grid-column: auto; }
 }
 
 .insights-main {
