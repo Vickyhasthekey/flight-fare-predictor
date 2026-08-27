@@ -173,6 +173,20 @@ class RecommendTests(unittest.TestCase):
         day14_rel = 0.50 + 0.01 * 14
         self.assertAlmostEqual(day14, 200.0 * day14_rel / today_rel, places=2)
 
+    def test_same_airport_is_rejected(self):
+        result = recommend.recommend_purchase_timing(
+            "BOS", "BOS", self.flight, today=self.today, current_price=200.0,
+        )
+        self.assertEqual(result["status"], "error")
+        self.assertIn("different airports", result["message"])
+
+    def test_unsupported_airport_is_rejected(self):
+        result = recommend.recommend_purchase_timing(
+            "ATL", "XYZ", self.flight, today=self.today, current_price=200.0,
+        )
+        self.assertEqual(result["status"], "error")
+        self.assertIn("supported", result["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

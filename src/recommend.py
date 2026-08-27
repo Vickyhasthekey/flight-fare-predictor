@@ -10,6 +10,10 @@ from src.remaining_curve import FEATURE_COLS
 MODEL_PATH = "models/price_model.joblib"
 MAX_DAYS = 60
 MIN_MEANINGFUL_SAVINGS = 8.0
+SUPPORTED_AIRPORTS = frozenset({
+    "ATL", "BOS", "CLT", "DEN", "DFW", "DTW", "EWR", "IAD",
+    "JFK", "LAX", "LGA", "MIA", "OAK", "ORD", "PHL", "SFO",
+})
 
 _bundle = None
 
@@ -220,9 +224,21 @@ def recommend_purchase_timing(origin, destination, flight_date, today=None,
                               current_price=None, nonstop_only=None, lookup_live=False,
                               stops=None):
     today = today or date.today()
+    origin = str(origin).strip().upper()
+    destination = str(destination).strip().upper()
     days_left = (flight_date - today).days
     stops = normalize_stops(stops=stops, nonstop_only=nonstop_only)
 
+    if origin == destination:
+        return {
+            "status": "error",
+            "message": "Origin and destination must be different airports.",
+        }
+    if origin not in SUPPORTED_AIRPORTS or destination not in SUPPORTED_AIRPORTS:
+        return {
+            "status": "error",
+            "message": "Pick both airports from the supported list.",
+        }
     if days_left <= 0:
         return {"status": "error", "message": "Flight date must be in the future."}
     if days_left > MAX_DAYS:

@@ -18,17 +18,22 @@ const AIRPORTS = [
   { code: "SFO", city: "San Francisco" },
 ];
 
-function setupCombobox(fieldId) {
+function setupCombobox(fieldId, otherFieldId) {
   const field = document.getElementById(`${fieldId}-field`);
   const input = document.getElementById(fieldId);
   const hidden = document.getElementById(`${fieldId}-code`);
   const list = document.getElementById(`${fieldId}-list`);
   let activeIndex = -1;
 
+  function otherCode() {
+    return document.getElementById(`${otherFieldId}-code`).value;
+  }
+
   function render(query) {
     const q = query.trim().toLowerCase();
+    const exclude = otherCode();
     const matches = AIRPORTS.filter(
-      (a) => a.city.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)
+      (a) => a.code !== exclude && (a.city.toLowerCase().includes(q) || a.code.toLowerCase().includes(q))
     );
     list.innerHTML = "";
     activeIndex = -1;
@@ -57,6 +62,11 @@ function setupCombobox(fieldId) {
     input.value = `${airport.city} (${airport.code})`;
     hidden.value = airport.code;
     list.classList.add("hidden");
+    const otherHidden = document.getElementById(`${otherFieldId}-code`);
+    if (otherHidden.value === airport.code) {
+      otherHidden.value = "";
+      document.getElementById(otherFieldId).value = "";
+    }
   }
 
   input.addEventListener("focus", () => render(""));
@@ -91,8 +101,26 @@ function setupCombobox(fieldId) {
   });
 }
 
-setupCombobox("origin");
-setupCombobox("destination");
+setupCombobox("origin", "destination");
+setupCombobox("destination", "origin");
+
+function localISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const flightDateInput = document.getElementById("flightDate");
+{
+  const today = new Date();
+  const min = new Date(today);
+  min.setDate(min.getDate() + 1);
+  const max = new Date(today);
+  max.setDate(max.getDate() + 60);
+  flightDateInput.min = localISODate(min);
+  flightDateInput.max = localISODate(max);
+}
 
 const form = document.getElementById("search-form");
 const submitBtn = document.getElementById("submit-btn");
@@ -116,6 +144,11 @@ form.addEventListener("submit", async (e) => {
 
   if (!origin || !destination) {
     showError("Please pick both airports from the dropdown list.");
+    return;
+  }
+
+  if (origin === destination) {
+    showError("Origin and destination must be different airports.");
     return;
   }
 

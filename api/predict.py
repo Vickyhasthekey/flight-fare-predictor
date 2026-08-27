@@ -4,7 +4,11 @@ import sys
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from src.recommend import normalize_stops, recommend_purchase_timing  # noqa: E402
+from src.recommend import (  # noqa: E402
+    SUPPORTED_AIRPORTS,
+    normalize_stops,
+    recommend_purchase_timing,
+)
 
 VALID_AIRPORT_LEN = 3
 
@@ -56,6 +60,16 @@ def handler(environ, start_response):
         if len(origin) != VALID_AIRPORT_LEN or len(destination) != VALID_AIRPORT_LEN:
             return _respond(start_response, 400,
                              {"status": "error", "message": "Enter valid 3-letter airport codes."})
+        if origin == destination:
+            return _respond(start_response, 400, {
+                "status": "error",
+                "message": "Origin and destination must be different airports.",
+            })
+        if origin not in SUPPORTED_AIRPORTS or destination not in SUPPORTED_AIRPORTS:
+            return _respond(start_response, 400, {
+                "status": "error",
+                "message": "Pick both airports from the supported list.",
+            })
         try:
             flight_date = date.fromisoformat(flight_date_str)
         except ValueError:
