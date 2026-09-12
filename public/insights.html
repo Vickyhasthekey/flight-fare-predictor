@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Data Behind the Predictions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">
+      <span class="brand-icon">&#9992;&#65039;</span>
+      <span class="brand-name">Flight Price Predictor</span>
+    </div>
+    <h1>Flight prices aren't random.</h1>
+    <p class="subtitle">We analyzed 82 million real historical fares to prove it - here's what we found, and why it means the purchase date matters as much as the route.</p>
+  </div>
+</header>
+
+<main class="insights-main">
+
+  <section class="insight-card">
+    <h2>1. Price follows a predictable curve, not noise</h2>
+    <p>For every major route we checked, average price doesn't move randomly as departure approaches.
+       It dips to a low point somewhere around <strong>40-55 days before departure</strong>, then climbs -
+       slowly at first, then sharply in the final <strong>10-15 days</strong>. This shape shows up
+       consistently across different routes, which is exactly the kind of repeatable pattern a model
+       can learn.</p>
+    <img src="images/price_vs_days_before_departure.png" alt="Average price vs. days before departure for the top 5 routes, all showing a dip-then-rise shape">
+    <p class="caption">Average predicted fare vs. days before departure, top 5 busiest routes in the dataset.</p>
+  </section>
+
+  <section class="insight-card">
+    <h2>2. Our model learns the trend, not the noise</h2>
+    <p>Day-to-day fares are noisy - a single cheap seat that happened to be available doesn't repeat
+       tomorrow. Rather than chasing that noise, our model learned the smoother trend underneath it,
+       and consistently caught the two things that matter most for a buying decision: roughly where the
+       low point is, and how sharply price rises in the final stretch before departure.</p>
+    <img src="images/predicted_vs_actual_curve.png" alt="Predicted vs. actual price curves for 4 routes, showing the model tracks the trend while ignoring daily noise">
+    <p class="caption">Model prediction (red) vs. actual fares found (blue) for one flight on each of 4 routes.</p>
+  </section>
+
+  <section class="insight-card cta-card">
+    <h2>So we built a tool that predicts this curve for you</h2>
+    <p>Tell us your route and travel date, and we'll predict how the price is likely to move between
+       now and departure - and tell you whether to buy today or wait.</p>
+    <a href="index.html" class="cta-button">Try the predictor &rarr;</a>
+  </section>
+
+</main>
+
+<footer>
+  <p>Built on historical Expedia search data &middot; predictions are estimates, not guarantees</p>
+</footer>
+
+</body>
+</html>

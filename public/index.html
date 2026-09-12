@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Price Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">
+      <span class="brand-icon">&#9992;&#65039;</span>
+      <span class="brand-name">Flight Price Predictor</span>
+    </div>
+    <h1>Know when to buy, not just what it costs.</h1>
+    <p class="subtitle">Tell us your route and travel date. We'll look up today's lowest published one-way, keep the predicted trend, and scale the dollars to that fare so you know whether to buy now or wait.</p>
+    <a href="insights.html" class="hero-link">See the data behind this &rarr;</a>
+  </div>
+</header>
+
+<main>
+  <section class="search-card">
+    <form id="search-form">
+      <div class="field combobox" id="origin-field">
+        <label for="origin">From</label>
+        <input type="text" id="origin" autocomplete="off" placeholder="City or airport" required>
+        <input type="hidden" id="origin-code">
+        <div class="combobox-list hidden" id="origin-list"></div>
+      </div>
+      <div class="field combobox" id="destination-field">
+        <label for="destination">To</label>
+        <input type="text" id="destination" autocomplete="off" placeholder="City or airport" required>
+        <input type="hidden" id="destination-code">
+        <div class="combobox-list hidden" id="destination-list"></div>
+      </div>
+      <div class="field full">
+        <label for="flightDate">Flight date</label>
+        <input type="date" id="flightDate" name="flightDate" required>
+      </div>
+      <div class="field full">
+        <label for="currentPrice">Today's fare (USD)</label>
+        <input type="number" id="currentPrice" name="currentPrice" min="1" step="0.01" placeholder="Leave blank to look up today's lowest published fare">
+      </div>
+      <div class="field full">
+        <label for="stops">Stops</label>
+        <select id="stops" name="stops">
+          <option value="all" selected>ALL</option>
+          <option value="nonstop">Non-stop</option>
+          <option value="connecting">Stop</option>
+        </select>
+      </div>
+      <button type="submit" id="submit-btn">Predict</button>
+    </form>
+  </section>
+
+  <section id="result" class="result-card hidden">
+    <div id="result-badge" class="badge"></div>
+    <p id="result-message" class="result-message"></p>
+    <canvas id="price-chart" width="600" height="260"></canvas>
+  </section>
+
+  <section id="error" class="error-card hidden">
+    <p id="error-message"></p>
+  </section>
+</main>
+
+<footer>
+  <p>Live lowest fare pins today's dollar level · estimates, not guarantees</p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

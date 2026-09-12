@@ -1,0 +1,12 @@
+[project]
+name = "flight-fare-predic"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas==3.0.5",
+    "scikit-learn==1.9.0",
+    "joblib==1.5.3",
+]
+
+[tool.vercel]
+entrypoint = "api.predict:handler"

@@ -1,0 +1,92 @@
+import json
+import os
+import sys
+from datetime import date
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.recommend import (  # noqa: E402
+    SUPPORTED_AIRPORTS,
+    normalize_stops,
+    recommend_purchase_timing,
+)
+
+VALID_AIRPORT_LEN = 3
+
+_STATUS_LINES = {
+    200: "200 OK",
+    400: "400 Bad Request",
+    405: "405 Method Not Allowed",
+    500: "500 Internal Server Error",
+}
+
+
+def handler(environ, start_response):
+    """WSGI entrypoint (declared in pyproject.toml) for POST /api/predict."""
+    if environ.get("REQUEST_METHOD") != "POST":
+        return _respond(start_response, 405, {"status": "error", "message": "Method not allowed"})
+
+    try:
+        length = int(environ.get("CONTENT_LENGTH") or 0)
+        raw_body = environ["wsgi.input"].read(length) if length else b"{}"
+        body = json.loads(raw_body or b"{}")
+
+        origin = str(body.get("origin", "")).strip().upper()
+        destination = str(body.get("destination", "")).strip().upper()
+        flight_date_str = str(body.get("flightDate", "")).strip()
+        try:
+            stops = normalize_stops(
+                stops=body.get("stops"),
+                nonstop_only=body.get("nonstopOnly"),
+            )
+        except ValueError:
+            return _respond(start_response, 400, {
+                "status": "error", "message": "Stops must be ALL, non-stop, or stop.",
+            })
+        current_price = body.get("currentPrice", None)
+        if current_price == "" or current_price is None:
+            current_price = None
+        else:
+            try:
+                current_price = float(current_price)
+            except (TypeError, ValueError):
+                return _respond(start_response, 400, {
+                    "status": "error", "message": "Current price must be a number.",
+                })
+            if current_price <= 0:
+                return _respond(start_response, 400, {
+                    "status": "error", "message": "Current price must be greater than 0.",
+                })
+
+        if len(origin) != VALID_AIRPORT_LEN or len(destination) != VALID_AIRPORT_LEN:
+            return _respond(start_response, 400,
+                             {"status": "error", "message": "Enter valid 3-letter airport codes."})
+        if origin == destination:
+            return _respond(start_response, 400, {
+                "status": "error",
+                "message": "Origin and destination must be different airports.",
+            })
+        if origin not in SUPPORTED_AIRPORTS or destination not in SUPPORTED_AIRPORTS:
+            return _respond(start_response, 400, {
+                "status": "error",
+                "message": "Pick both airports from the supported list.",
+            })
+        try:
+            flight_date = date.fromisoformat(flight_date_str)
+        except ValueError:
+            return _respond(start_response, 400, {"status": "error", "message": "Enter a valid flight date."})
+
+        result = recommend_purchase_timing(
+            origin, destination, flight_date,
+            current_price=current_price, stops=stops,
+            lookup_live=current_price is None,
+        )
+        return _respond(start_response, 200, result)
+    except Exception as e:
+        return _respond(start_response, 500, {"status": "error", "message": f"Server error: {e}"})
+
+
+def _respond(start_response, code, payload):
+    body = json.dumps(payload).encode()
+    headers = [("Content-Type", "application/json"), ("Content-Length", str(len(body)))]
+    start_response(_STATUS_LINES[code], headers)
+    return [body]

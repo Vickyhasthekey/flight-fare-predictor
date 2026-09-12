@@ -1,0 +1,19 @@
+# data files (too large for git, keep locally only)
+data/*.csv
+data/*.parquet
+data/*.zip
+
+# small showcase sample is the exception, keep it tracked
+!data/sample_flight_prices_clean.csv
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.venv/
+
+# os
+.DS_Store
+.vercel
+.env*
