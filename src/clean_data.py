@@ -1,5 +1,7 @@
-import duckdb
+import os
 import time
+
+import duckdb
 
 IN_PATH = "data/flight_prices_slim.csv"
 OUT_PATH = "data/flight_prices_clean.parquet"
@@ -60,8 +62,10 @@ print(f"Cleaning done in {elapsed:.1f}s")
 
 # Stats after cleaning
 after = con.execute(f"SELECT COUNT(*) FROM '{OUT_PATH}'").fetchone()[0]
-print(f"\nRows after cleaning: {after:,} (from {total:,}, dropped {total - after:,} rows, {(total-after)/total*100:.2f}%)")
+print(
+    f"\nRows after cleaning: {after:,} "
+    f"(from {total:,}, dropped {total - after:,} rows, {(total - after) / total * 100:.2f}%)"
+)
 
-import os
 size_mb = os.path.getsize(OUT_PATH) / (1024 * 1024)
 print(f"Output file size: {size_mb:.1f} MB (original csv was {os.path.getsize(IN_PATH) / (1024**3):.1f} GB)")

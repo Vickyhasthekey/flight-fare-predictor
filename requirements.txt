@@ -1,5 +1,9 @@
 duckdb==1.5.5
+fastapi>=0.115
 pandas==3.0.5
 matplotlib==3.11.1
 scikit-learn==1.9.0
 joblib==1.5.3
+numpy>=2.0
+pydantic>=2.9
+uvicorn>=0.30

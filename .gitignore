@@ -5,6 +5,12 @@ data/*.zip
 
 # small showcase sample is the exception, keep it tracked
 !data/sample_flight_prices_clean.csv
+!data/sample_flight_trajectories.csv
+
+# Generated evaluation artifacts
+artifacts/*.json
+artifacts/*.csv
+!artifacts/README.md
 
 # python
 __pycache__/
@@ -12,6 +18,8 @@ __pycache__/
 .ipynb_checkpoints/
 venv/
 .venv/
+.venv*/
+*.egg-info/
 
 # os
 .DS_Store

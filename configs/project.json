@@ -1,0 +1,12 @@
+{
+  "raw_csv": "/Users/yuvia/Downloads/itineraries 2.csv",
+  "clean_parquet": "data/flight_prices_clean.parquet",
+  "training_table": "data/training_table.parquet",
+  "remaining_pairs": "data/remaining_pairs.parquet",
+  "model_path": "models/price_model.joblib",
+  "backtest_input": "data/sample_flight_trajectories.csv",
+  "backtest_output": "artifacts/backtest_results.json",
+  "minimum_savings": 8.0,
+  "maximum_horizon_days": 60,
+  "random_state": 42
+}
