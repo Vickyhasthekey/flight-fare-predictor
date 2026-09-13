@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -235,17 +236,38 @@ def main():
     route_median_fare = daily.groupby("route")["best_fare"].median()
 
     os.makedirs("models", exist_ok=True)
+    evaluation = {
+        "model_selection": "validation BUY/WAIT agreement, cheapest-day error, and curve Spearman",
+        "selected_configuration": best_name,
+        "train_rows": len(train),
+        "validation_rows": len(val),
+        "test_rows": len(test),
+        "train_cutoff": str(pd.Timestamp(train_cutoff).date()),
+        "test_cutoff": str(pd.Timestamp(val_cutoff).date()),
+        "test_buy_wait_agreement": test_stats["buy_wait"],
+        "test_median_best_day_error": test_stats["median_best_day_err"],
+        "test_median_curve_spearman": test_stats["median_spearman"],
+        "test_remaining_curve_rmse": test_stats["remain_rmse"],
+        "test_pair_mae_dollars": float(mae),
+        "test_pair_rmse_dollars": float(rmse),
+    }
     joblib.dump({
         "model": final_model,
         "model_kind": "relative_remaining",
+        "model_version": "0.1.0",
         "route_categories": all_routes,
         "feature_cols": FEATURE_COLS,
         "route_distance": route_distance,
         "global_median_distance": float(daily["totalTravelDistance"].median()),
         "route_median_fare": route_median_fare,
         "global_median_fare": float(daily["best_fare"].median()),
+        "evaluation": evaluation,
     }, MODEL_PATH)
+    os.makedirs("artifacts", exist_ok=True)
+    with open("artifacts/model_evaluation.json", "w", encoding="utf-8") as handle:
+        json.dump(evaluation, handle, indent=2)
     print(f"Saved {MODEL_PATH}")
+    print("Saved artifacts/model_evaluation.json")
 
 
 if __name__ == "__main__":

@@ -4,14 +4,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import duckdb
-import numpy as np
-import pandas as pd
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
+import joblib
 import matplotlib.pyplot as plt
 
 from src.remaining_curve import FEATURE_COLS, attach_features
-import joblib
 
 TABLE_PATH = "data/training_table.parquet"
 MODEL_PATH = "models/price_model.joblib"
@@ -34,7 +34,7 @@ print(f"Comparing predicted vs actual for: {top_routes}")
 fig, axes = plt.subplots(2, 2, figsize=(14, 9))
 axes = axes.flatten()
 
-for ax, route in zip(axes, top_routes):
+for ax, route in zip(axes, top_routes, strict=False):
     route_df = df[df["route"] == route]
     flight_date = route_df["flightDate"].value_counts().idxmax()
     flight_rows = route_df[route_df["flightDate"] == flight_date].sort_values("days_before_departure")

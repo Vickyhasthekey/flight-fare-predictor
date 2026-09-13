@@ -10,7 +10,6 @@ from src.live_price import (
     set_fetch,
 )
 
-
 KAYAK_SNIPPET = '''
 <div>Cheapest one-way</div></div><div class="c_nzd-price">$115</div>
 <div class="c_nzd-price-range">Typical prices: $131-$295</div>

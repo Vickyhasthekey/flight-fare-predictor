@@ -1,7 +1,9 @@
 import json
 import unittest
-from io import BytesIO
 from datetime import date, timedelta
+from io import BytesIO
+
+from fastapi.testclient import TestClient
 
 import api.predict as predict_api
 import src.recommend as recommend
@@ -54,6 +56,23 @@ class PredictApiTests(unittest.TestCase):
         })
         self.assertTrue(status.startswith("200"))
         self.assertIn(data["status"], {"buy_now", "wait"})
+
+    def test_fastapi_health_and_prediction(self):
+        client = TestClient(predict_api.app)
+        health = client.get("/health")
+        self.assertEqual(health.status_code, 200)
+        response = client.post(
+            "/api/predict",
+            json={
+                "origin": "ATL",
+                "destination": "LAX",
+                "flightDate": self.flight,
+                "currentPrice": 200,
+                "stops": "all",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.json()["status"], {"buy_now", "wait"})
 
 
 if __name__ == "__main__":

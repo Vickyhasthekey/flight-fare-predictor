@@ -1,5 +1,6 @@
-import duckdb
 import os
+
+import duckdb
 
 IN_PATH = "data/flight_prices_clean.parquet"
 OUT_PATH = "data/training_table.parquet"

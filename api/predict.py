@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 import json
 import os
 import sys
 from datetime import date
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from fastapi import FastAPI, HTTPException  # noqa: E402
+from pydantic import BaseModel, Field, model_validator  # noqa: E402
+from starlette.staticfiles import StaticFiles  # noqa: E402
+
 from src.recommend import (  # noqa: E402
     SUPPORTED_AIRPORTS,
     normalize_stops,
@@ -11,6 +18,68 @@ from src.recommend import (  # noqa: E402
 )
 
 VALID_AIRPORT_LEN = 3
+
+app = FastAPI(
+    title="FareSignal API",
+    version="0.1.0",
+    description="Flight-fare curves and BUY/WAIT purchase recommendations.",
+)
+
+
+class PredictRequest(BaseModel):
+    origin: str = Field(min_length=3, max_length=3)
+    destination: str = Field(min_length=3, max_length=3)
+    flightDate: date
+    currentPrice: float | None = Field(default=None, gt=0)
+    stops: str = "all"
+
+    @model_validator(mode="after")
+    def validate_route(self) -> PredictRequest:
+        self.origin = self.origin.strip().upper()
+        self.destination = self.destination.strip().upper()
+        if self.origin == self.destination:
+            raise ValueError("Origin and destination must be different airports.")
+        if self.origin not in SUPPORTED_AIRPORTS or self.destination not in SUPPORTED_AIRPORTS:
+            raise ValueError("Pick both airports from the supported list.")
+        normalize_stops(stops=self.stops)
+        return self
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "model": "ready" if Path("models/price_model.joblib").exists() else "missing",
+        "version": "0.1.0",
+    }
+
+
+@app.post("/api/predict")
+def predict(request: PredictRequest):
+    result = recommend_purchase_timing(
+        request.origin,
+        request.destination,
+        request.flightDate,
+        current_price=request.currentPrice,
+        stops=request.stops,
+        lookup_live=request.currentPrice is None,
+    )
+    if result.get("status") in {"error", "too_far"}:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+@app.get("/api/backtest/results")
+def backtest_results():
+    path = Path("artifacts/backtest_results.json")
+    if not path.exists():
+        raise HTTPException(status_code=503, detail="Backtest results have not been generated.")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# Mount after API routes so one local server can host both the application and REST endpoints.
+if Path("public").exists():
+    app.mount("/", StaticFiles(directory="public", html=True), name="public")
 
 _STATUS_LINES = {
     200: "200 OK",

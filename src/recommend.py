@@ -1,7 +1,8 @@
+from datetime import date, timedelta
+
 import joblib
 import numpy as np
 import pandas as pd
-from datetime import date, timedelta
 
 from src.features import is_weekend_dow, near_holiday
 from src.live_price import lookup_live_min_fare
