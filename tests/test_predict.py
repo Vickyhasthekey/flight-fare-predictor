@@ -1,7 +1,9 @@
 import json
+import os
 import unittest
 from datetime import date, timedelta
 from io import BytesIO
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -73,6 +75,28 @@ class PredictApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(response.json()["status"], {"buy_now", "wait"})
+
+    def test_fastapi_flights_search_returns_compact_itineraries(self):
+        from src.serp_flights import set_fetch
+        from tests.test_serp_flights import SERP_PAYLOAD
+
+        set_fetch(lambda url: SERP_PAYLOAD)
+        self.addCleanup(lambda: set_fetch(None))
+        with mock.patch.dict(os.environ, {"SERPAPI_API_KEY": "test-key"}):
+            client = TestClient(predict_api.app)
+            response = client.post(
+                "/api/flights",
+                json={
+                    "origin": "ATL",
+                    "destination": "LAX",
+                    "flightDate": self.flight,
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(len(data["flights"]), 2)
+        self.assertEqual(data["flights"][0]["airline"], "Delta")
 
 
 if __name__ == "__main__":

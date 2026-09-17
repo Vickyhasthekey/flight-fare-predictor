@@ -9,9 +9,11 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from pydantic import BaseModel, Field, model_validator  # noqa: E402
 from starlette.staticfiles import StaticFiles  # noqa: E402
 
+from api.flights import handle_request  # noqa: E402
 from src.recommend import (  # noqa: E402
     SUPPORTED_AIRPORTS,
     normalize_stops,
@@ -68,6 +70,13 @@ def predict(request: PredictRequest):
     if result.get("status") in {"error", "too_far"}:
         raise HTTPException(status_code=400, detail=result["message"])
     return result
+
+
+@app.post("/api/flights")
+def search_flights(body: dict):
+    """Live one-way itineraries for the picker. Same payload as the Vercel WSGI path."""
+    code, payload = handle_request(body)
+    return JSONResponse(status_code=code, content=payload)
 
 
 @app.get("/api/backtest/results")

@@ -17,13 +17,14 @@ an API, a browser interface, automated tests, and reproducible CLI workflows.
 - Remaining-curve gradient boosting using route, lead time, current fare, calendar, distance, stop
   type, weekend, and holiday features
 - Chronological train/validation/test splits
-- BUY/WAIT recommendations pinned to user-entered or published current fares
+- BUY/WAIT recommendations pinned to a chosen itinerary fare (or a published current fare)
+- Live one-way itinerary search (SerpAPI Google Flights) so travelers pick a specific flight before the curve
 - Validation-only decision-threshold selection
 - Held-out booking backtest against buy-now, always-wait, trailing-median, random, and oracle policies
 - FastAPI and legacy Vercel-compatible WSGI endpoints
 - Responsive browser UI with predicted fare curve and purchase window
 - Docker packaging, GitHub Actions CI, and reproducible Make targets
-- 38 automated tests plus Ruff configuration and installable packaging
+- 51 automated tests plus Ruff configuration and installable packaging
 
 ## Architecture
 
