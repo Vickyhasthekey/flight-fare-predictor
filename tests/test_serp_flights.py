@@ -1,14 +1,13 @@
 import json
 import os
 import unittest
-from io import BytesIO
 from datetime import date, timedelta
+from io import BytesIO
 from unittest import mock
 
-from src.serp_flights import compact_flights, search_one_way, set_fetch
 import api.flights as flights_api
 from src.recommend import SUPPORTED_AIRPORTS
-
+from src.serp_flights import compact_flights, search_one_way, set_fetch
 
 SERP_PAYLOAD = {
     "best_flights": [

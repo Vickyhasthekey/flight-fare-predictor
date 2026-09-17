@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.recommend import MAX_DAYS, SUPPORTED_AIRPORTS  # noqa: E402
@@ -73,7 +73,7 @@ def handle_request(body):
         "origin": origin,
         "destination": destination,
         "flightDate": flight_date.isoformat(),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(UTC).isoformat(),
         "flights": flights,
     }
 
