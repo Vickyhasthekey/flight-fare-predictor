@@ -149,22 +149,34 @@ the versioned model bundle and `artifacts/model_evaluation.json`.
 
 ## API
 
-Start FastAPI locally:
+Start FastAPI locally (`make api` is the same command):
 
 ```bash
 uvicorn api.predict:app --reload
 ```
 
+Open http://127.0.0.1:8000. The browser first calls `POST /api/flights` (Find flights), then pins the remaining-fare curve with `POST /api/predict` using the chosen itinerary's price and stop type.
+
+Live itinerary search needs a [SerpAPI](https://serpapi.com/dashboard) key in the shell that starts the server. Tests mock this call and do not need a key.
+
+```bash
+export SERPAPI_API_KEY="your_key"
+make api
+```
+
+Without the key, `/health` and `/api/predict` still work. Find flights returns HTTP 503 until the key is set. Do not commit the key; `.env*` is gitignored.
+
 Endpoints:
 
 ```text
 GET  /health
+POST /api/flights
 POST /api/predict
 GET  /api/backtest/results
 GET  /docs
 ```
 
-Example request:
+Example curve request after a flight is chosen (or to skip search):
 
 ```json
 {
@@ -176,7 +188,12 @@ Example request:
 }
 ```
 
-The existing static site under `public/` sends the same request to `/api/predict`.
+Docker (frontend is included; pass the key only if you want Find flights):
+
+```bash
+docker build -t fare-signal .
+docker run --rm -p 8000:8000 -e SERPAPI_API_KEY="$SERPAPI_API_KEY" fare-signal
+```
 
 ## Data scope
 

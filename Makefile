@@ -15,6 +15,8 @@ lint:
 backtest:
 	fare-signal backtest --input data/sample_flight_trajectories.csv
 
+# Serves public/ at http://127.0.0.1:8000. Find flights needs SERPAPI_API_KEY in the environment.
+# Example: SERPAPI_API_KEY=... make api
 api:
 	uvicorn api.predict:app --reload
 
