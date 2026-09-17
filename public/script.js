@@ -128,7 +128,68 @@ const resultCard = document.getElementById("result");
 const errorCard = document.getElementById("error");
 const badge = document.getElementById("result-badge");
 const message = document.getElementById("result-message");
+const resultPin = document.getElementById("result-pin");
 const canvas = document.getElementById("price-chart");
+const flightsCard = document.getElementById("flights");
+const flightList = document.getElementById("flight-list");
+const flightsMeta = document.getElementById("flights-meta");
+const showMoreBtn = document.getElementById("show-more");
+
+const FLIGHT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const FLIGHT_CACHE_PREFIX = "ffp:flights:v1:";
+const INITIAL_VISIBLE = 6;
+
+let lastSearch = null;
+let flightResults = [];
+let fetchedAt = null;
+let fromCache = false;
+let visibleCount = INITIAL_VISIBLE;
+let stopFilter = "all";
+let selectedId = null;
+
+function flightCacheKey(origin, destination, flightDate) {
+  return `${FLIGHT_CACHE_PREFIX}${origin}|${destination}|${flightDate}|oneway`;
+}
+
+function readFlightCache(key) {
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const raw = store.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.flights) || !parsed.savedAt) continue;
+      if (Date.now() - parsed.savedAt > FLIGHT_CACHE_TTL_MS) {
+        store.removeItem(key);
+        continue;
+      }
+      return parsed;
+    } catch (err) {
+      store.removeItem(key);
+    }
+  }
+  return null;
+}
+
+function writeFlightCache(key, payload) {
+  const raw = JSON.stringify(payload);
+  try { sessionStorage.setItem(key, raw); } catch (err) { /* quota */ }
+  try { localStorage.setItem(key, raw); } catch (err) { /* quota */ }
+}
+
+async function fetchFlights(payload) {
+  const headers = { "Content-Type": "application/json" };
+  const post = (url, body) => fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  let res = await post("/api/flights", payload);
+  const ctype = (res.headers.get("content-type") || "").toLowerCase();
+  if (res.status === 404 || res.status === 405 || !ctype.includes("json")) {
+    res = await post("/api/predict", { ...payload, lookup: "flights" });
+  }
+  return res;
+}
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -138,9 +199,6 @@ form.addEventListener("submit", async (e) => {
   const origin = document.getElementById("origin-code").value;
   const destination = document.getElementById("destination-code").value;
   const flightDate = document.getElementById("flightDate").value;
-  const currentPriceRaw = document.getElementById("currentPrice").value.trim();
-  const currentPrice = currentPriceRaw === "" ? null : Number(currentPriceRaw);
-  const stops = document.getElementById("stops").value;
 
   if (!origin || !destination) {
     showError("Please pick both airports from the dropdown list.");
@@ -152,19 +210,209 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  if (currentPriceRaw !== "" && !(currentPrice > 0)) {
-    showError("Enter today's fare as a positive number, or leave it blank.");
+  lastSearch = { origin, destination, flightDate };
+  selectedId = null;
+  visibleCount = INITIAL_VISIBLE;
+  stopFilter = "all";
+  document.querySelectorAll(".chip").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.stops === "all");
+  });
+
+  const cacheKey = flightCacheKey(origin, destination, flightDate);
+  const cached = readFlightCache(cacheKey);
+  if (cached) {
+    flightResults = cached.flights;
+    fetchedAt = cached.fetched_at;
+    fromCache = true;
+    renderFlights();
     return;
   }
 
+  flightsCard.classList.add("hidden");
   submitBtn.disabled = true;
-  submitBtn.textContent = currentPriceRaw === "" ? "Looking up today's fare…" : "Predicting...";
+  submitBtn.textContent = "Looking up flights…";
+
+  try {
+    const res = await fetchFlights({ origin, destination, flightDate });
+    const data = await res.json();
+
+    if (!res.ok || data.status === "error") {
+      flightsCard.classList.add("hidden");
+      showError(data.message || "Could not look up flights. Please try again.");
+      return;
+    }
+
+    flightResults = data.flights || [];
+    fetchedAt = data.fetched_at;
+    fromCache = false;
+    writeFlightCache(cacheKey, {
+      savedAt: Date.now(),
+      fetched_at: fetchedAt,
+      flights: flightResults,
+    });
+    renderFlights();
+  } catch (err) {
+    flightsCard.classList.add("hidden");
+    showError("Could not reach the flight search. Please try again.");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Find flights";
+  }
+});
+
+document.querySelectorAll(".chip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    stopFilter = btn.dataset.stops;
+    visibleCount = INITIAL_VISIBLE;
+    document.querySelectorAll(".chip").forEach((el) => {
+      el.classList.toggle("active", el === btn);
+    });
+    renderFlights();
+  });
+});
+
+showMoreBtn.addEventListener("click", () => {
+  visibleCount += INITIAL_VISIBLE;
+  renderFlights();
+});
+
+function filteredFlights() {
+  if (stopFilter === "nonstop") return flightResults.filter((f) => f.stops === 0);
+  if (stopFilter === "connecting") return flightResults.filter((f) => f.stops > 0);
+  return flightResults;
+}
+
+function formatClock(hhmm) {
+  if (!hhmm) return "—";
+  const [hStr, m] = hhmm.split(":");
+  let h = Number(hStr);
+  if (!Number.isFinite(h)) return hhmm;
+  const suffix = h >= 12 ? "p" : "a";
+  h = h % 12 || 12;
+  return `${h}:${m}${suffix}`;
+}
+
+function formatDuration(min) {
+  if (min == null) return "";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+function stopsLabel(flight) {
+  if (flight.stops === 0) return "Nonstop";
+  if (flight.stops === 1) {
+    const via = flight.stop_airports && flight.stop_airports[0];
+    return via ? `1 stop (${via})` : "1 stop";
+  }
+  return `${flight.stops} stops`;
+}
+
+function formatFetchedAt(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function renderFlights() {
+  flightsCard.classList.remove("hidden");
+  const rows = filteredFlights();
+  const asOf = formatFetchedAt(fetchedAt);
+  const source = fromCache ? "saved search" : "live search";
+  flightsMeta.textContent = asOf
+    ? `${rows.length} option${rows.length === 1 ? "" : "s"} · prices as of ${asOf} (${source})`
+    : `${rows.length} option${rows.length === 1 ? "" : "s"}`;
+
+  flightList.innerHTML = "";
+  if (rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "flights-meta";
+    empty.textContent = flightResults.length
+      ? "No flights match that stops filter."
+      : "No priced flights found for that date.";
+    flightList.appendChild(empty);
+    showMoreBtn.classList.add("hidden");
+    return;
+  }
+
+  rows.slice(0, visibleCount).forEach((flight) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "flight-card" + (flight.id === selectedId ? " selected" : "");
+
+    if (flight.airline_logo) {
+      const img = document.createElement("img");
+      img.className = "flight-logo";
+      img.src = flight.airline_logo;
+      img.alt = "";
+      img.width = 36;
+      img.height = 36;
+      img.addEventListener("error", () => {
+        const fallback = document.createElement("div");
+        fallback.className = "flight-logo-fallback";
+        fallback.textContent = flight.airline_code || "—";
+        img.replaceWith(fallback);
+      });
+      btn.appendChild(img);
+    } else {
+      const fallback = document.createElement("div");
+      fallback.className = "flight-logo-fallback";
+      fallback.textContent = flight.airline_code || "—";
+      btn.appendChild(fallback);
+    }
+
+    const main = document.createElement("div");
+    main.className = "flight-main";
+    const airline = document.createElement("p");
+    airline.className = "flight-airline";
+    const numbers = (flight.flight_numbers || []).join(" · ");
+    airline.textContent = `${flight.airline || "Unknown airline"}${numbers ? ` · ${numbers}` : ""}`;
+    const times = document.createElement("p");
+    times.className = "flight-times";
+    times.textContent = [
+      `${formatClock(flight.depart_time)} → ${formatClock(flight.arrive_time)}`,
+      formatDuration(flight.duration_min),
+      stopsLabel(flight),
+    ].filter(Boolean).join(" · ");
+    main.append(airline, times);
+    btn.appendChild(main);
+
+    const price = document.createElement("div");
+    price.className = "flight-price";
+    price.textContent = `$${Math.round(flight.price)}`;
+    btn.appendChild(price);
+
+    btn.addEventListener("click", () => predictItinerary(flight));
+    flightList.appendChild(btn);
+  });
+
+  showMoreBtn.classList.toggle("hidden", rows.length <= visibleCount);
+}
+
+async function predictItinerary(flight) {
+  if (!lastSearch) return;
+  selectedId = flight.id;
+  renderFlights();
+  errorCard.classList.add("hidden");
+  const { origin, destination, flightDate } = lastSearch;
+  const stops = flight.stops === 0 ? "nonstop" : "connecting";
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Predicting…";
 
   try {
     const res = await fetch("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin, destination, flightDate, currentPrice, stops }),
+      body: JSON.stringify({
+        origin,
+        destination,
+        flightDate,
+        currentPrice: flight.price,
+        stops,
+      }),
     });
     const data = await res.json();
 
@@ -173,14 +421,14 @@ form.addEventListener("submit", async (e) => {
       return;
     }
 
-    showResult(data);
+    showResult(data, flight);
   } catch (err) {
     showError("Could not reach the prediction service. Please try again.");
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = "Predict";
+    submitBtn.textContent = "Find flights";
   }
-});
+}
 
 function showError(msg) {
   errorCard.classList.remove("hidden");
@@ -192,8 +440,16 @@ function formatDate(iso) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function showResult(data) {
+function showResult(data, flight) {
   resultCard.classList.remove("hidden");
+  const numbers = (flight.flight_numbers || []).join(" · ");
+  const pinBits = [
+    flight.airline,
+    numbers,
+    `${formatClock(flight.depart_time)} ${stopsLabel(flight).toLowerCase()}`,
+    `$${Math.round(flight.price)}`,
+  ].filter(Boolean);
+  resultPin.textContent = `Pinned to ${pinBits.join(" · ")}`;
   badge.textContent = data.status === "buy_now" ? "Buy now" : "Wait & save";
   badge.className = "badge " + (data.status === "buy_now" ? "buy-now" : "wait");
   message.textContent = data.message;
@@ -201,6 +457,7 @@ function showResult(data) {
   if (data.curve && data.curve.length) {
     drawChart(data);
   }
+  resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function drawChart(data) {

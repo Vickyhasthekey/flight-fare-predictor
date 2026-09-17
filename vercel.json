@@ -1,3 +1,6 @@
 {
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/api/flights", "destination": "/api/predict?lookup=flights" }
+  ]
 }

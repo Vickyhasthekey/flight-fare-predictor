@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.parse
 from datetime import date
 from pathlib import Path
 
@@ -86,6 +87,8 @@ _STATUS_LINES = {
     400: "400 Bad Request",
     405: "405 Method Not Allowed",
     500: "500 Internal Server Error",
+    502: "502 Bad Gateway",
+    503: "503 Service Unavailable",
 }
 
 
@@ -98,6 +101,12 @@ def handler(environ, start_response):
         length = int(environ.get("CONTENT_LENGTH") or 0)
         raw_body = environ["wsgi.input"].read(length) if length else b"{}"
         body = json.loads(raw_body or b"{}")
+        query = urllib.parse.parse_qs(environ.get("QUERY_STRING") or "")
+        lookup = str(body.get("lookup") or (query.get("lookup") or [""])[0]).strip().lower()
+        if lookup == "flights":
+            from api.flights import handle_request
+            code, payload = handle_request(body)
+            return _respond(start_response, code, payload)
 
         origin = str(body.get("origin", "")).strip().upper()
         destination = str(body.get("destination", "")).strip().upper()

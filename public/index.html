@@ -18,7 +18,7 @@
       <span class="brand-name">FareSignal</span>
     </div>
     <h1>Know when to buy, not just what it costs.</h1>
-    <p class="subtitle">Tell us your route and travel date. We'll look up today's lowest published one-way, keep the predicted trend, and scale the dollars to that fare so you know whether to buy now or wait.</p>
+    <p class="subtitle">Tell us your route and travel date, pick a specific flight, then we'll show how that fare is likely to move so you know whether to buy now or wait.</p>
     <a href="insights.html" class="hero-link">See the data behind this &rarr;</a>
   </div>
 </header>
@@ -42,23 +42,28 @@
         <label for="flightDate">Flight date</label>
         <input type="date" id="flightDate" name="flightDate" required>
       </div>
-      <div class="field full">
-        <label for="currentPrice">Today's fare (USD)</label>
-        <input type="number" id="currentPrice" name="currentPrice" min="1" step="0.01" placeholder="Leave blank to look up today's lowest published fare">
-      </div>
-      <div class="field full">
-        <label for="stops">Stops</label>
-        <select id="stops" name="stops">
-          <option value="all" selected>ALL</option>
-          <option value="nonstop">Non-stop</option>
-          <option value="connecting">Stop</option>
-        </select>
-      </div>
-      <button type="submit" id="submit-btn">Predict</button>
+      <button type="submit" id="submit-btn">Find flights</button>
     </form>
   </section>
 
+  <section id="flights" class="flights-card hidden">
+    <div class="flights-header">
+      <div>
+        <h2>Choose a flight</h2>
+        <p id="flights-meta" class="flights-meta"></p>
+      </div>
+      <div class="stop-filters" role="group" aria-label="Filter by stops">
+        <button type="button" class="chip active" data-stops="all">All</button>
+        <button type="button" class="chip" data-stops="nonstop">Nonstop</button>
+        <button type="button" class="chip" data-stops="connecting">With stops</button>
+      </div>
+    </div>
+    <div id="flight-list" class="flight-list"></div>
+    <button type="button" id="show-more" class="show-more hidden">Show more flights</button>
+  </section>
+
   <section id="result" class="result-card hidden">
+    <p id="result-pin" class="result-pin"></p>
     <div id="result-badge" class="badge"></div>
     <p id="result-message" class="result-message"></p>
     <canvas id="price-chart" width="600" height="260"></canvas>
@@ -70,7 +75,7 @@
 </main>
 
 <footer>
-  <p>Live lowest fare pins today's dollar level · estimates, not guarantees</p>
+  <p>Pick a flight to pin today's dollar level · estimates, not guarantees</p>
 </footer>
 
 <script src="script.js"></script>
