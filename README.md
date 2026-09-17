@@ -205,5 +205,5 @@ Dataset source: [Flight Prices on Kaggle](https://www.kaggle.com/datasets/dilwon
 > and browser-based BUY/WAIT experience.
 
 > Designed a leakage-aware booking simulator with validation-only policy selection and held-out
-> comparisons against four baseline strategies; added versioned artifacts, 38 automated tests, and
+> comparisons against four baseline strategies; added versioned artifacts, 51 automated tests, and
 > reproducible CLI workflows.
