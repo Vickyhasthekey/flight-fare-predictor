@@ -44,7 +44,13 @@ body {
   margin-bottom: 28px;
 }
 
-.brand-icon { font-size: 16px; }
+.brand-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
 
 .hero h1 {
   font-size: 36px;
